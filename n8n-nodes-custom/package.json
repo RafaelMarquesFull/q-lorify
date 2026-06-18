@@ -1,0 +1,54 @@
+{
+  "name": "n8n-nodes-qlorify",
+  "version": "1.0.0",
+  "description": "Custom n8n nodes for Qlorify AI Agents",
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "license": "MIT",
+  "homepage": "",
+  "author": {
+    "name": "Qlorify",
+    "email": "rdasilvafullstack@icloud.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qlorify/n8n-nodes-qlorify.git"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "lint": "tslint -p tsconfig.json -c tslint.json",
+    "lint:fix": "tslint -p tsconfig.json -c tslint.json --fix",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "nodes": [
+      "dist/nodes/Orchestrator/Orchestrator.node.js",
+      "dist/nodes/SentimentAnalysis/SentimentAnalysis.node.js",
+      "dist/nodes/QlorifyCredentials/QlorifyCredentials.node.js",
+      "dist/nodes/QlorifyFallback/QlorifyFallback.node.js"
+    ],
+    "credentials": [
+      "dist/credentials/OrchestratorApi.credentials.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.6",
+    "@types/request-promise-native": "~1.0.15",
+    "gulp": "^4.0.2",
+    "n8n-core": "^0.116.0",
+    "n8n-workflow": "^0.113.0",
+    "prettier": "^2.0.5",
+    "tslint": "^6.1.2",
+    "typescript": "^4.0.2"
+  },
+  "dependencies": {
+    "n8n-core": "^0.116.0",
+    "n8n-workflow": "^0.113.0"
+  }
+}

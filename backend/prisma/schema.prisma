@@ -1,0 +1,378 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "/Users/rafaeldasilvamarques/Desktop/Agents/backend/venv/bin/prisma-client-py"
+  interface = "sync"
+  output   = "../venv/lib/python3.12/site-packages/prisma"
+  recursive_type_depth = 5
+}
+
+// enum Role {
+//   ADMIN
+//   CLIENT
+// }
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Hashed
+  name      String?
+  role      String   @default("CLIENT") // values: ADMIN, CLIENT
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Balance & Auto-Recharge
+  balance               Float    @default(0.0)
+  stripeCustomerId      String?
+  stripePaymentMethodId String?
+  autoRechargeEnabled   Boolean  @default(false)
+  rechargeThreshold     Float    @default(10.0)
+  rechargeAmount        Float    @default(50.0)
+
+  apiKeys       ApiKey[]
+  metrics       Metric[]
+  transactions  Transaction[]
+  subscription  Subscription?
+  affiliate     AffiliateProfile?
+  agents        Agent[]
+}
+
+model AIProvider {
+  id               String   @id @default(uuid())
+  name             String
+  baseUrl          String?
+  apiKey           String?  // Fallback single API key (for backwards compatibility)
+  type             String   // e.g. "openai", "groq"
+  rotationEnabled  Boolean  @default(false)
+  models           AIModel[]
+  keys             ProviderApiKey[]
+  createdAt        DateTime @default(now())
+}
+
+model ProviderApiKey {
+  id          String     @id @default(uuid())
+  providerId  String
+  provider    AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  apiKey      String
+  label       String?    // Ex: "Key 1", "Production", etc.
+  isActive    Boolean    @default(true)
+  usageCount  Int        @default(0)
+  lastUsedAt  DateTime?
+  createdAt   DateTime   @default(now())
+}
+
+model AIModel {
+  id                 String     @id @default(uuid())
+  name               String     // Display name (user-friendly, ex: "GPT-4 Turbo")
+  providerModelId    String?    // Model ID sent to provider API (ex: "gpt-4-turbo-preview")
+  providerId         String
+  provider           AIProvider @relation(fields: [providerId], references: [id])
+  costPerInputToken  Float      @default(0.0)
+  costPerOutputToken Float      @default(0.0)
+  
+  // Client-facing info
+  description        String?    // Model description for clients
+  rpm                Int        @default(60)     // Requests per minute limit
+  integrationGuide   String?    // How to integrate (markdown)
+  isPublic           Boolean    @default(true)   // Show to clients
+  
+  // Fallback chain - IDs of models to try if this one fails
+  fallback1Id        String?    // First fallback model
+  fallback2Id        String?    // Second fallback model  
+  fallback3Id        String?    // Third fallback model
+  
+  agents             Agent[]
+  metrics            Metric[]
+  
+  isOrchestrator     Boolean    @default(false)  // If true, routes to extraction orchestrator
+  isSentiment        Boolean    @default(false)  // If true, routes to sentiment analysis engine
+}
+
+
+model Agent {
+  id            String   @id @default(uuid())
+  name          String
+  systemPrompt  String
+  modelId       String
+  model         AIModel  @relation(fields: [modelId], references: [id])
+  userId        String?  // If user created custom agent
+  user          User?    @relation(fields: [userId], references: [id])
+  config        String?  // JSON string
+
+  // ── Rules-Prompt: compiled business rules from system prompt ──
+  compiledRules   String?   // JSON of rules extracted by robust LLM
+  rulesModelId    String?   // Which LLM to use for rule compilation
+  rulesCompiledAt DateTime? // When rules were last compiled
+  rulesVersion    Int       @default(0) // Rule compilation version counter
+  promptHash      String?   // SHA256 hash of static parts of system prompt (ignores dynamic vars)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  name      String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  active    Boolean  @default(true)
+}
+
+model Metric {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  modelId      String?
+  model        AIModel? @relation(fields: [modelId], references: [id])
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  cost         Float    @default(0.0)
+  requestDurationMs Int?
+  timestamp    DateTime @default(now())
+}
+
+model Subscription {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  stripeCustomerId String?
+  stripeSubscriptionId String?
+  status    String   @default("inactive")
+  plan      String?
+  updatedAt DateTime @updatedAt
+}
+
+model AffiliateProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  balance   Float    @default(0.0)
+  commissionRate Float @default(0.1) // 10%
+  referralCode String @unique
+  transactions AffiliateTransaction[]
+}
+
+model AffiliateTransaction {
+  id        String   @id @default(uuid())
+  affiliateId String
+  affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id])
+  amount    Float
+  type      String   // COMMISSION, WITHDRAWAL
+  status    String   // PENDING, COMPLETED
+  createdAt DateTime @default(now())
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        String   // CREDIT, DEBIT
+  amount      Float
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+// ============================================
+// AI Orchestration Framework
+// ============================================
+
+model OrchFunction {
+  id              String   @id @default(uuid())
+  name            String   @unique  // ex: "extract_cep"
+  displayName     String             // ex: "Extrator de CEP"
+  description     String?
+  enabled         Boolean  @default(true)
+  pricePerUnit    Float    @default(0.0)   // Valor cobrado (ex: 0.25)
+  unitSize        Int      @default(1000)  // Quantidade por unidade (ex: 1000 requisições)
+  enrichPricePerUnit Float @default(0.05)  // Custo adicional do enriquecimento por lote (unitSize)
+  requiresAi      Boolean  @default(false)
+  inputSchema     String?  // JSON schema for input validation
+  timeout         Int      @default(30000)  // ms
+  defaultModelId  String?  // Modelo padrão para IA
+  fallbackModelId String?  // Modelo fallback
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model OrchClient {
+  id               String   @id @default(uuid())
+  name             String
+  token            String   @unique  // API token for auth
+  enabled          Boolean  @default(true)
+  rateLimit        Int      @default(100)  // requests per minute
+  allowedFunctions String?  // JSON array of function names (null = all)
+  allowedModels    String?  // JSON array of model IDs (null = all)
+  requestCount     Int      @default(0)
+  lastRequestAt    DateTime?
+  createdAt        DateTime @default(now())
+}
+
+model OrchExecution {
+  id           String   @id @default(uuid())
+  clientId     String?
+  userId       String?
+  functionName String
+  input        String   // JSON input
+  output       String?  // JSON output
+  success      Boolean
+  usedAi       Boolean  @default(false)
+  modelUsed    String?
+  cost         String   @default("low")
+  durationMs   Int
+  error        String?
+  createdAt    DateTime @default(now())
+}
+
+// User-specific function configuration
+model UserFunction {
+  id             String   @id @default(uuid())
+  userId         String
+  functionName   String   // ex: "extract_cep"
+  enabled        Boolean  @default(true)
+  outputTemplate String?  // JSON template with {{result_xxx_N}} placeholders
+  config         String?  // Additional user config as JSON
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@unique([userId, functionName])
+}
+
+// User-defined extraction keys per function
+model UserFunctionKey {
+  id           String   @id @default(uuid())
+  userId       String
+  functionName String   // ex: "extract_cep"
+  key          String   // ex: "CEP_origem"
+  description  String   // ex: "CEP do remetente, origem, envio"
+  createdAt    DateTime @default(now())
+  
+  @@unique([userId, functionName, key])
+}
+
+// Per-API-Key function config overrides (inherits from UserFunction when absent)
+model ApiKeyFunctionConfig {
+  id             String   @id @default(uuid())
+  apiKeyId       String
+  functionName   String   // ex: "extract_cep"
+  enabled        Boolean  @default(true)
+  outputTemplate String?  // JSON template override
+  config         String?  // Additional config override as JSON
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([apiKeyId, functionName])
+}
+
+// Per-API-Key extraction keys overrides (inherits from UserFunctionKey when absent)
+model ApiKeyFunctionKey {
+  id           String   @id @default(uuid())
+  apiKeyId     String
+  functionName String   // ex: "extract_cep"
+  key          String   // ex: "CEP_origem"
+  description  String   // ex: "CEP do remetente, origem, envio"
+  createdAt    DateTime @default(now())
+
+  @@unique([apiKeyId, functionName, key])
+}
+
+// ============================================
+// Self-Learning Sentiment Analysis System
+// ============================================
+
+// Domain configurations for multi-domain learning
+model DomainConfig {
+  id                String             @id @default(uuid())
+  domain            String             @unique  // 'transport', 'health', 'food', etc.
+  name              String                      // "Transporte & Logística"
+  description       String?
+  icon              String?                     // "🚚"
+  
+  // Domain-specific configurations
+  defaultCategories String             // JSON array: ["cotação", "rastreio", ...]
+  systemPrompt      String             // Specialized AI prompt
+  matchingRules     String?            // JSON: domain-specific rules
+  contradictionRules String?           // JSON: logic guardrails (e.g. status constraints)
+  
+  // Flags
+  isActive          Boolean            @default(true)
+  isDefault         Boolean            @default(false)
+  
+  // Relations - Domain-scoped learning data
+  synonyms          SentimentSynonym[]
+  logs              SentimentLog[]
+  patterns          SentimentPattern[]
+  
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+// Logs all sentiment classifications for review/learning
+model SentimentLog {
+  id              String        @id @default(uuid())
+  
+  // Domain scoping
+  domain          String        @default("transport")
+  domainConfig    DomainConfig? @relation(fields: [domain], references: [domain])
+  
+  timestamp       DateTime      @default(now())
+  intent          String                          // User message
+  context         String?                         // Previous context
+  categories      String                          // JSON array of categories
+  classification  String                          // AI/cache classification result
+  classifications String?                         // JSON array for multi-intent
+  confidence      Float         @default(0.0)     // AI confidence score 0-1
+  source          String                          // cache|fuzzy|ai|rule_match
+  tokenUsage      Int           @default(0)       // Tokens consumed
+  executionTimeMs Int           @default(0)       // Latency in ms
+  
+  // Review fields
+  isReviewed      Boolean       @default(false)   // Admin reviewed?
+  adminCorrection String?                         // Admin's correction
+  reviewedBy      String?                         // Admin user ID
+  reviewedAt      DateTime?                       // Review timestamp
+  feedbackNotes   String?                         // Admin notes
+}
+
+// Learned synonyms cache - expands without AI calls
+// Domain-scoped to prevent cross-contamination
+model SentimentSynonym {
+  id          String        @id @default(uuid())
+  
+  // Domain scoping
+  domain      String        @default("transport")
+  domainConfig DomainConfig? @relation(fields: [domain], references: [domain])
+  
+  word        String                              // The synonym/word
+  category    String                              // Maps to this category
+  source      String        @default("admin")     // admin|auto
+  approvedBy  String?                             // Admin who approved
+  createdAt   DateTime      @default(now())
+  useCount    Int           @default(0)           // Times used in cache hits
+  lastUsedAt  DateTime?                           // Last cache hit
+  
+  @@unique([domain, word, category])
+}
+
+// Pattern detection for auto-learning
+// Domain-scoped for accurate pattern matching
+model SentimentPattern {
+  id              String        @id @default(uuid())
+  
+  // Domain scoping
+  domain          String        @default("transport")
+  domainConfig    DomainConfig? @relation(fields: [domain], references: [domain])
+  
+  word            String                          // Detected word
+  category        String                          // Classified to this category
+  occurrenceCount Int           @default(1)       // Times seen
+  avgConfidence   Float         @default(0.0)     // Average AI confidence
+  lastSeen        DateTime      @default(now())
+  autoApproved    Boolean       @default(false)   // Auto-promoted to synonym?
+  
+  @@unique([domain, word, category])
+}
