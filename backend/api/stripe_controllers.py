@@ -206,8 +206,12 @@ def webhook(request):
     elif event['type'] == 'payment_intent.succeeded':
         payment_intent = event['data']['object']
         
-        user_id = payment_intent.get('metadata', {}).get('userId')
-        amount_received = payment_intent.get('amount_received', 0) # in cents
+        metadata = getattr(payment_intent, 'metadata', {})
+        user_id = metadata.get('userId') if isinstance(metadata, dict) else getattr(metadata, 'userId', None)
+        if not user_id and hasattr(payment_intent, 'get'):
+            user_id = payment_intent.get('metadata', {}).get('userId')
+
+        amount_received = getattr(payment_intent, 'amount_received', 0) # in cents
         
         if user_id:
             # Credit balance
@@ -230,6 +234,16 @@ def webhook(request):
             })
             
             print(f"Credited ${amount_currency} to user {user_id}")
+            
+            try:
+                user_record = db.user.find_unique(where={"id": user_id})
+                if user_record:
+                    from .emails import send_recharge_receipt
+                    import datetime
+                    date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    send_recharge_receipt(user_record.email, user_record.name, amount_currency, "Cartão de Crédito (Stripe)", date_str)
+            except Exception as e:
+                print(f"Error sending recharge receipt: {e}")
                  
     return HttpResponse(status=200)
     """

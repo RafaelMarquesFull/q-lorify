@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
-import { Plus, Cpu, Trash2, Edit, Shield, AlertTriangle, Zap, Clock, BrainCircuit } from "lucide-react"
+import { Plus, Cpu, Trash2, Edit, Shield, AlertTriangle, Zap, Clock, BrainCircuit, Eye } from "lucide-react"
 import api from "@/lib/api"
 import { toast } from "sonner"
 
@@ -322,6 +322,22 @@ export default function ModelsPage() {
                 </div>
             </div>
 
+            {/* Public Model Section */}
+            <div className="border-t border-white/10 pt-4 mt-2">
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label className="text-right flex items-center gap-2">
+                        <Eye className="h-4 w-4 text-blue-400" />
+                        Público
+                    </Label>
+                    <div className="col-span-3 flex items-center gap-3">
+                        <Switch checked={isPublic} onCheckedChange={setIsPublic} />
+                        <span className="text-sm text-white/60">
+                            {isPublic ? "Visível para clientes (Landing & Dashboard)" : "Oculto (Apenas uso interno/Agentes)"}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
             {/* Fallback Chain Section */}
             <div className="border-t border-white/10 pt-4 mt-2">
                 <div className="flex items-center gap-2 mb-3">
@@ -434,6 +450,12 @@ export default function ModelsPage() {
                                             <Badge className="bg-pink-500/20 text-pink-400 ml-2">
                                                 <BrainCircuit className="h-3 w-3 mr-1" />
                                                 Sentimento
+                                            </Badge>
+                                        )}
+                                        {!model.isPublic && (
+                                            <Badge className="bg-zinc-500/20 text-zinc-400 ml-2">
+                                                <Eye className="h-3 w-3 mr-1" />
+                                                Interno
                                             </Badge>
                                         )}
                                     </div>

@@ -216,11 +216,15 @@ export default function LandingPage() {
                                         <div className="space-y-3 pt-6 border-t border-white/5">
                                             <div className="flex justify-between items-center text-sm">
                                                 <span className="text-muted-foreground">Entrada (1M tokens)</span>
-                                                <span className="font-mono text-white font-medium">R$ {(model.costIn * 1000000).toFixed(2).replace('.', ',')}</span>
+                                                <span className="font-mono text-white font-medium">
+                                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(model.costIn)}
+                                                </span>
                                             </div>
                                             <div className="flex justify-between items-center text-sm">
                                                 <span className="text-muted-foreground">Saída (1M tokens)</span>
-                                                <span className="font-mono text-white font-medium">R$ {(model.costOut * 1000000).toFixed(2).replace('.', ',')}</span>
+                                                <span className="font-mono text-white font-medium">
+                                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(model.costOut)}
+                                                </span>
                                             </div>
                                         </div>
 

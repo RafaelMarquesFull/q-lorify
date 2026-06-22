@@ -34,14 +34,22 @@ def register(request):
         salt = bcrypt.gensalt()
         hashed = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
         
+        import uuid
+        verification_token = str(uuid.uuid4())
+        
         user = db.user.create(data={
             "email": email,
             "password": hashed,
             "name": name,
-            "role": "CLIENT"
+            "role": "CLIENT",
+            "emailVerified": False,
+            "emailVerificationToken": verification_token
         })
         
-        return JsonResponse({"message": "User created", "userId": user.id}, status=201)
+        from .emails import send_validation_email
+        send_validation_email(email, name, verification_token)
+        
+        return JsonResponse({"message": "User created. Please check your email to verify your account.", "userId": user.id}, status=201)
         
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
@@ -65,6 +73,9 @@ def login(request):
         if not user:
             return JsonResponse({"error": "Invalid credentials"}, status=401)
             
+        if not user.emailVerified:
+            return JsonResponse({"error": "E-mail não verificado. Por favor, cheque sua caixa de entrada para ativar a conta."}, status=403)
+            
         # Verify password
         if not bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
             return JsonResponse({"error": "Invalid credentials"}, status=401)
@@ -77,6 +88,15 @@ def login(request):
             "exp": datetime.datetime.utcnow() + datetime.timedelta(days=1)
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+        
+        # Async email login warning
+        try:
+            from .emails import send_login_warning
+            ip = request.META.get('REMOTE_ADDR', 'Desconhecido')
+            device = request.META.get('HTTP_USER_AGENT', 'Dispositivo Desconhecido')
+            send_login_warning(email, ip, device, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        except:
+            pass
         
         return JsonResponse({"token": token, "user": {"id": user.id, "email": user.email, "role": user.role, "name": user.name}})
         
@@ -136,12 +156,34 @@ def google_login(request):
             salt = bcrypt.gensalt()
             random_pw = bcrypt.hashpw(f"GOOGLE_SSO_{datetime.datetime.now()}".encode(), salt).decode()
             
+            import uuid
+            verification_token = str(uuid.uuid4())
+            
             user = db.user.create(data={
                 "email": email,
                 "password": random_pw,
                 "name": name,
-                "role": "CLIENT"
+                "role": "CLIENT",
+                "emailVerified": False,
+                "emailVerificationToken": verification_token
             })
+            
+            from .emails import send_validation_email
+            send_validation_email(email, name, verification_token)
+            
+            return JsonResponse({"error": "Conta criada via Google. Por favor, valide seu e-mail antes de acessar. Enviamos um link para sua caixa de entrada."}, status=403)
+            
+        if not user.emailVerified:
+            return JsonResponse({"error": "E-mail não verificado. Por favor, cheque sua caixa de entrada para ativar a conta."}, status=403)
+            
+        # Async email login warning
+        try:
+            from .emails import send_login_warning
+            ip = request.META.get('REMOTE_ADDR', 'Desconhecido')
+            device = request.META.get('HTTP_USER_AGENT', 'Dispositivo Desconhecido')
+            send_login_warning(email, ip, device, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        except:
+            pass
             
         # Generate Session JWT
         payload = {
@@ -163,5 +205,96 @@ def google_login(request):
             }
         })
 
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+@csrf_exempt
+def verify_email(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    token = request.GET.get("token")
+    if not token:
+        return JsonResponse({"error": "Token is required"}, status=400)
+    db = get_db()
+    user = db.user.find_first(where={"emailVerificationToken": token})
+    if not user:
+        return JsonResponse({"error": "Invalid or expired token"}, status=400)
+    
+    db.user.update(where={"id": user.id}, data={
+        "emailVerified": True,
+        "emailVerificationToken": None
+    })
+    
+    from .emails import send_welcome_email
+    send_welcome_email(user.email, user.name)
+    
+    from django.shortcuts import redirect
+    import os
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+    return redirect(f"{frontend_url}/login?verified=true")
+
+@csrf_exempt
+def request_password_reset(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    try:
+        data = json.loads(request.body)
+        email = data.get("email")
+        if not email:
+            return JsonResponse({"error": "Email required"}, status=400)
+        db = get_db()
+        user = db.user.find_unique(where={"email": email})
+        if user:
+            import uuid
+            import datetime
+            reset_token = str(uuid.uuid4())
+            expires = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            db.user.update(where={"id": user.id}, data={
+                "passwordResetToken": reset_token,
+                "passwordResetExpires": expires.isoformat() + "Z"
+            })
+            from .emails import send_password_reset
+            send_password_reset(user.email, reset_token)
+            
+        return JsonResponse({"message": "Se o e-mail existir, um link de recuperação foi enviado."})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+@csrf_exempt
+def reset_password(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    try:
+        data = json.loads(request.body)
+        token = data.get("token")
+        new_password = data.get("password")
+        if not token or not new_password:
+            return JsonResponse({"error": "Token and new password required"}, status=400)
+            
+        db = get_db()
+        user = db.user.find_first(where={"passwordResetToken": token})
+        if not user:
+            return JsonResponse({"error": "Token inválido"}, status=400)
+            
+        import datetime
+        if user.passwordResetExpires:
+            expires_str = str(user.passwordResetExpires).replace("Z", "+00:00")
+            try:
+                expires_dt = datetime.datetime.fromisoformat(expires_str)
+                if datetime.datetime.now(datetime.timezone.utc) > expires_dt:
+                    return JsonResponse({"error": "Token expirado"}, status=400)
+            except:
+                pass
+                
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(new_password.encode('utf-8'), salt).decode('utf-8')
+        
+        db.user.update(where={"id": user.id}, data={
+            "password": hashed,
+            "passwordResetToken": None,
+            "passwordResetExpires": None
+        })
+        
+        return JsonResponse({"message": "Senha redefinida com sucesso"})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)

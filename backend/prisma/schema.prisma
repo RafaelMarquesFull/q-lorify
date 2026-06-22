@@ -24,6 +24,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Email Validation & Password Reset
+  emailVerified            Boolean   @default(false)
+  emailVerificationToken   String?
+  passwordResetToken       String?
+  passwordResetExpires     DateTime?
+
   // Balance & Auto-Recharge
   balance               Float    @default(0.0)
   stripeCustomerId      String?
@@ -375,4 +381,10 @@ model SentimentPattern {
   autoApproved    Boolean       @default(false)   // Auto-promoted to synonym?
   
   @@unique([domain, word, category])
+}
+
+model SystemSetting {
+  key       String @id
+  value     String
+  updatedAt String @default("")
 }

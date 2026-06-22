@@ -5,7 +5,8 @@ import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { useNavigate, Link } from "react-router-dom"
+import { useNavigate, Link, useSearchParams } from "react-router-dom"
+import { useEffect } from "react"
 import { useAuthStore } from "@/store/auth"
 import api from "@/lib/api"
 import { toast } from "sonner"
@@ -21,8 +22,17 @@ const formSchema = z.object({
 
 export default function LoginPage() {
     const navigate = useNavigate()
+    const [searchParams, setSearchParams] = useSearchParams()
     const login = useAuthStore((state) => state.login)
     const [loading, setLoading] = useState(false)
+
+    useEffect(() => {
+        if (searchParams.get("verified") === "true") {
+            toast.success("E-mail verificado com sucesso! Você já pode fazer login.")
+            // Remove the param so it doesn't show again on refresh
+            setSearchParams({})
+        }
+    }, [searchParams, setSearchParams])
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
@@ -176,6 +186,13 @@ export default function LoginPage() {
                                     </FormItem>
                                 )}
                             />
+                            
+                            <div className="flex justify-end">
+                                <Link to="/forgot-password" className="text-sm text-primary hover:text-primary/80 font-semibold transition-colors">
+                                    Esqueci minha senha
+                                </Link>
+                            </div>
+
                             <Button type="submit" variant="glow" className="w-full h-11 text-base font-semibold shadow-lg shadow-primary/20" disabled={loading}>
                                 {loading && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
                                 Entrar <ArrowRight className="ml-2 h-4 w-4" />

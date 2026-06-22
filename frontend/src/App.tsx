@@ -12,6 +12,9 @@ import AdminLayout from "@/layouts/AdminLayout"
 const LandingPage = lazy(() => import("@/pages/LandingPage"))
 const LoginPage = lazy(() => import("@/pages/LoginPage"))
 const RegisterPage = lazy(() => import("@/pages/RegisterPage"))
+const ForgotPasswordPage = lazy(() => import("@/pages/ForgotPasswordPage"))
+const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"))
+const VerifyEmailPage = lazy(() => import("@/pages/VerifyEmailPage"))
 
 // Dashboard pages
 const DashboardOverview = lazy(() => import("@/pages/dashboard/Overview"))
@@ -71,6 +74,9 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
 
             <Route path="/dashboard" element={
               <ProtectedRoute>

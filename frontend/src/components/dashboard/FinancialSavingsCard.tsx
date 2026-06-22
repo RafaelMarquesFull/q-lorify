@@ -37,12 +37,12 @@ export function FinancialSavingsCard({ domain = "transport" }: { domain?: string
 
     return (
         <Card className="bg-gradient-to-r from-emerald-900/20 to-teal-900/10 border-emerald-500/30">
-            <CardHeader className="pb-2">
+            {/* <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-emerald-400">
                     <PiggyBank className="h-5 w-5" /> Economia Inteligente
                 </CardTitle>
-            </CardHeader>
-            <CardContent>
+            </CardHeader> */}
+            {/* <CardContent>
                 <div className="grid grid-cols-3 gap-4 text-center">
                     <div className="p-2 bg-black/20 rounded border border-white/5">
                         <p className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">USD Economizados</p>
@@ -60,7 +60,7 @@ export function FinancialSavingsCard({ domain = "transport" }: { domain?: string
                 <p className="text-xs text-emerald-500/60 mt-4 text-center">
                     *Baseado em custo médio de GPT-4o por 1k tokens.
                 </p>
-            </CardContent>
+            </CardContent> */}
         </Card>
     )
 }

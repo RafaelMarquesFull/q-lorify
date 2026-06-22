@@ -39,7 +39,7 @@ export default function RegisterPage() {
         try {
             const registerRes = await api.post("/auth/register", values)
             if (registerRes.status === 201) {
-                toast.success("Conta criada com sucesso! Faça login.")
+                toast.success("Conta criada com sucesso! Verifique seu e-mail para ativar a conta.")
                 navigate("/login")
             }
         } catch (error: any) {

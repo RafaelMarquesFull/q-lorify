@@ -8,6 +8,9 @@ urlpatterns = [
     path('auth/register', auth.register, name='register'),
     path('auth/login', auth.login, name='login'),
     path('auth/google', auth.google_login, name='google_login'),
+    path('auth/verify-email', auth.verify_email, name='verify_email'),
+    path('auth/request-password-reset', auth.request_password_reset, name='request_password_reset'),
+    path('auth/reset-password', auth.reset_password, name='reset_password'),
     path('users/me', users.me, name='users_me'),
     path('users/update', users.update_me, name='users_update'),
     
