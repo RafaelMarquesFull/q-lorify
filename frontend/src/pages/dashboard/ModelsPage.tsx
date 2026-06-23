@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge"
 import { Cpu, Zap, Clock, Copy, Check } from "lucide-react"
 import api from "@/lib/api"
 import { toast } from "sonner"
+import iconeOrquestrador from "@/assets/icone-orquestrador.png"
+import iconeSentiment from "@/assets/icone-sentiment.png"
 import { AnimatedGradientBg } from "@/components/animated-gradient-bg"
 
 interface Model {
@@ -102,7 +104,15 @@ export default function ModelsPage() {
                         <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">
                                 <div className="flex items-center gap-2">
-                                    {model.isOrchestrator ? (
+                                    {model.name === 'formatter-inspect-agregattor' ? (
+                                        <div className="p-1 rounded-lg bg-white/90 ring-1 ring-primary/20 group-hover:ring-primary/40 transition-all">
+                                            <img src={iconeOrquestrador} alt="Orquestrador" className="h-6 w-6 object-contain" />
+                                        </div>
+                                    ) : model.name === 'qlr-agentc-sentiments' ? (
+                                        <div className="p-1 rounded-lg bg-white/90 ring-1 ring-purple-500/20 group-hover:ring-purple-500/40 transition-all">
+                                            <img src={iconeSentiment} alt="Sentiments" className="h-6 w-6 object-contain" />
+                                        </div>
+                                    ) : model.isOrchestrator ? (
                                         <div className="p-2 rounded-lg bg-primary/10 ring-1 ring-primary/20 group-hover:ring-primary/40 transition-all">
                                             <Zap className="h-5 w-5 text-primary" />
                                         </div>

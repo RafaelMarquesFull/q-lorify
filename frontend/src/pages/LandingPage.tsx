@@ -6,6 +6,8 @@ import { AnimatedGradientBg } from "@/components/animated-gradient-bg"
 import { BentoCard } from "@/components/bento-card"
 import Logotipo from "@/assets/logotipo.png"
 import HeroBg from "@/assets/hero-bg.png"
+import iconeOrquestrador from "@/assets/icone-orquestrador.png"
+import iconeSentiment from "@/assets/icone-sentiment.png"
 import api from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { SEO } from "@/components/SEO"
@@ -41,6 +43,8 @@ interface Model {
     costIn: number
     costOut: number
     description?: string
+    isOrchestrator?: boolean
+    isSentiment?: boolean
 }
 
 export default function LandingPage() {
@@ -233,16 +237,28 @@ export default function LandingPage() {
                             {models.map((model) => (
                                 <BentoCard key={model.id} size="1x1" className="bg-gradient-to-br from-white/5 to-transparent border-white/10 hover:border-primary/30 transition-all duration-300">
                                     <div className="p-6">
-                                        <div className="flex justify-between items-start mb-4">
-                                            <div className="p-3 bg-white/5 rounded-lg">
-                                                <Bot className="h-6 w-6 text-primary" />
-                                            </div>
+                                        <div className="flex justify-between items-center mb-4">
+                                            {model.name === 'formatter-inspect-agregattor' ? (
+                                                <div className="p-1 bg-white/90 rounded-lg">
+                                                    <img src={iconeOrquestrador} alt="Orquestrador" className="h-8 w-8 object-contain" />
+                                                </div>
+                                            ) : model.name === 'qlr-agentc-sentiments' ? (
+                                                <div className="p-1 bg-white/90 rounded-lg">
+                                                    <img src={iconeSentiment} alt="Sentiments" className="h-8 w-8 object-contain" />
+                                                </div>
+                                            ) : (
+                                                <div className="p-3 bg-white/5 rounded-lg">
+                                                    <Bot className="h-6 w-6 text-primary" />
+                                                </div>
+                                            )}
+
+                                            <h3 className="text-lg mx-2 font-bold text-white mb-2">{model.name}</h3>
+
                                             <Badge variant="secondary" className="bg-white/10 text-xs">
                                                 Produção
                                             </Badge>
                                         </div>
 
-                                        <h3 className="text-xl font-bold text-white mb-2">{model.name}</h3>
                                         <p className="text-sm text-muted-foreground mb-6 h-10 line-clamp-2">
                                             {model.description || "Modelo de alta performance para tarefas gerais e raciocínio complexo."}
                                         </p>
@@ -328,8 +344,8 @@ export default function LandingPage() {
                 <div className="container mx-auto px-6">
                     <div className="flex flex-col md:flex-row justify-between items-center gap-8">
                         <div className="flex items-center space-x-2 opacity-70 hover:opacity-100 transition-opacity">
-                            <Bot className="h-5 w-5 text-primary" />
-                            <span className="font-semibold tracking-tight text-white">Qlorify</span>
+                            <img src={Logotipo} alt="Qlorify Logo" className="h-6 w-auto object-contain" />
+
                         </div>
                         <div className="flex gap-8 text-sm text-muted-foreground">
                             <a href="#" className="hover:text-primary transition-colors">Privacidade</a>
