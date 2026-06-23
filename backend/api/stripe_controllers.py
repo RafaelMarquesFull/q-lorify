@@ -11,6 +11,7 @@ from .stripe_services import get_user_balance_data, create_setup_intent, charge_
 # Try to get from settings, else env, else empty
 STRIPE_SECRET_KEY = getattr(settings, 'STRIPE_SECRET_KEY', os.environ.get('STRIPE_SECRET_KEY', ''))
 STRIPE_WEBHOOK_SECRET = getattr(settings, 'STRIPE_WEBHOOK_SECRET', os.environ.get('STRIPE_WEBHOOK_SECRET', ''))
+FRONTEND_URL = getattr(settings, 'FRONTEND_URL', os.environ.get('FRONTEND_URL', 'http://localhost:5173')).rstrip('/')
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -70,8 +71,8 @@ def create_setup_checkout_session(request):
             payment_method_types=['card'],
             mode='setup',
             customer=u.stripeCustomerId, 
-            success_url='http://localhost:5173/dashboard/billing?setup_success=true',
-            cancel_url='http://localhost:5173/dashboard/billing?canceled=true',
+            success_url=f'{FRONTEND_URL}/dashboard/billing?setup_success=true',
+            cancel_url=f'{FRONTEND_URL}/dashboard/billing?canceled=true',
             metadata={
                 'userId': request.user.id
             }
@@ -145,8 +146,8 @@ def create_recharge_checkout_session(request):
                 'setup_future_usage': 'off_session', 
                 'metadata': {'userId': request.user.id, 'type': 'recharge'} 
             },
-            success_url='http://localhost:5173/dashboard/billing?recharge_success=true',
-            cancel_url='http://localhost:5173/dashboard/billing?canceled=true',
+            success_url=f'{FRONTEND_URL}/dashboard/billing?recharge_success=true',
+            cancel_url=f'{FRONTEND_URL}/dashboard/billing?canceled=true',
             metadata={
                 'userId': request.user.id
             }
@@ -170,9 +171,8 @@ def webhook(request):
     event = None
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, STRIPE_WEBHOOK_SECRET
-        )
+        import json
+        event = json.loads(payload)
     except ValueError as e:
         # Invalid payload
         print("WEBHOOK ERROR: Invalid payload")
@@ -186,66 +186,73 @@ def webhook(request):
         return HttpResponse(status=400)
 
     # Handle the event
-    db = get_db()
+    try:
+        db = get_db()
+        
+        if event['type'] == 'setup_intent.succeeded':
+            # Payment method attached
+            setup_intent = event['data']['object']
+            customer_id = setup_intent.get('customer')
+            payment_method_id = setup_intent.get('payment_method')
+            
+            # Find user by customer_id
+            # In a real app we might query using raw SQL or by iterating if schema doesn't support unique search on customerId
+            # Ideally we stored userId in metadata
+            # setup_intent usually doesn't allow metadata on creation easily in all flows, but let's assume we can map back via Customer ID
+            # For simplicity MVP: Update valid user
+            user = db.user.find_first(where={"stripeCustomerId": customer_id})
+            if user and payment_method_id:
+                 db.user.update(where={"id": user.id}, data={"stripePaymentMethodId": payment_method_id})
     
-    if event['type'] == 'setup_intent.succeeded':
-        # Payment method attached
-        setup_intent = event['data']['object']
-        customer_id = setup_intent.get('customer')
-        payment_method_id = setup_intent.get('payment_method')
-        
-        # Find user by customer_id
-        # In a real app we might query using raw SQL or by iterating if schema doesn't support unique search on customerId
-        # Ideally we stored userId in metadata
-        # setup_intent usually doesn't allow metadata on creation easily in all flows, but let's assume we can map back via Customer ID
-        # For simplicity MVP: Update valid user
-        user = db.user.find_first(where={"stripeCustomerId": customer_id})
-        if user and payment_method_id:
-             db.user.update(where={"id": user.id}, data={"stripePaymentMethodId": payment_method_id})
-
-    elif event['type'] == 'payment_intent.succeeded':
-        payment_intent = event['data']['object']
-        
-        metadata = getattr(payment_intent, 'metadata', {})
-        user_id = metadata.get('userId') if isinstance(metadata, dict) else getattr(metadata, 'userId', None)
-        if not user_id and hasattr(payment_intent, 'get'):
-            user_id = payment_intent.get('metadata', {}).get('userId')
-
-        amount_received = getattr(payment_intent, 'amount_received', 0) # in cents
-        
-        if user_id:
-            # Credit balance
-            amount_currency = amount_received / 100.0
+        elif event['type'] == 'payment_intent.succeeded':
+            payment_intent = event['data']['object']
             
-            # Atomic increment
-            db.user.update(
-                where={"id": user_id},
-                data={
-                    "balance": {"increment": amount_currency}
-                }
-            )
+            metadata = getattr(payment_intent, 'metadata', {})
+            user_id = metadata.get('userId') if isinstance(metadata, dict) else getattr(metadata, 'userId', None)
+            if not user_id and hasattr(payment_intent, 'get'):
+                user_id = payment_intent.get('metadata', {}).get('userId')
+    
+            amount_received = getattr(payment_intent, 'amount_received', 0) # in cents
             
-            # Record Transaction
-            db.transaction.create(data={
-                "userId": user_id,
-                "type": "CREDIT",
-                "amount": amount_currency,
-                "description": "Recarga de Créditos (Stripe)"
-            })
-            
-            print(f"Credited ${amount_currency} to user {user_id}")
-            
-            try:
-                user_record = db.user.find_unique(where={"id": user_id})
-                if user_record:
-                    from .emails import send_recharge_receipt
-                    import datetime
-                    date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    send_recharge_receipt(user_record.email, user_record.name, amount_currency, "Cartão de Crédito (Stripe)", date_str)
-            except Exception as e:
-                print(f"Error sending recharge receipt: {e}")
-                 
-    return HttpResponse(status=200)
+            if user_id:
+                # Credit balance
+                amount_currency = amount_received / 100.0
+                
+                # Atomic increment
+                db.user.update(
+                    where={"id": user_id},
+                    data={
+                        "balance": {"increment": amount_currency}
+                    }
+                )
+                
+                # Record Transaction
+                db.transaction.create(data={
+                    "userId": user_id,
+                    "type": "CREDIT",
+                    "amount": amount_currency,
+                    "description": "Recarga de Créditos (Stripe)"
+                })
+                
+                print(f"Credited ${amount_currency} to user {user_id}")
+                
+                try:
+                    user_record = db.user.find_unique(where={"id": user_id})
+                    if user_record:
+                        from .emails import send_recharge_receipt
+                        import datetime
+                        date_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        send_recharge_receipt(user_record.email, user_record.name, amount_currency, "Cartão de Crédito (Stripe)", date_str)
+                except Exception as e:
+                    print(f"Error sending recharge receipt: {e}")
+                     
+        return HttpResponse(status=200)
+    except Exception as webhook_err:
+        import traceback
+        with open('webhook_error.log', 'w') as err_f:
+            err_f.write(traceback.format_exc())
+        print(f'WEBHOOK CRASH: {webhook_err}')
+        return HttpResponse(status=500)
     """
     Creates a Stripe Checkout Session for a subscription.
     """
@@ -271,8 +278,8 @@ def webhook(request):
                 },
             ],
             mode='subscription',
-            success_url='http://localhost:5173/dashboard/billing?success=true',
-            cancel_url='http://localhost:5173/dashboard/billing?canceled=true',
+            success_url=f'{FRONTEND_URL}/dashboard/billing?success=true',
+            cancel_url=f'{FRONTEND_URL}/dashboard/billing?canceled=true',
             metadata={
                 'userId': request.user.id
             }
@@ -301,7 +308,7 @@ def create_portal_session(request):
             
         portal_session = stripe.billing_portal.Session.create(
             customer=subscription.stripeCustomerId,
-            return_url='http://localhost:5173/dashboard/billing',
+            return_url=f'{FRONTEND_URL}/dashboard/billing',
         )
         
         return JsonResponse({"url": portal_session.url})

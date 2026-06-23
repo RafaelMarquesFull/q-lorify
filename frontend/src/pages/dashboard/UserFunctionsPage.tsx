@@ -463,7 +463,7 @@ Carga: 1t 300kg`
                     <div className="relative group">
                         <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
                         <pre className="relative bg-black/60 backdrop-blur-md border border-white/10 rounded-lg p-4 text-sm overflow-x-auto text-blue-200 shadow-inner">
-                            {`curl -X POST http://localhost:8001/api/chat/completions \\
+                            {`curl -X POST ${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/chat/completions \\
   -H "Authorization: Bearer sk-agent-SUA_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{

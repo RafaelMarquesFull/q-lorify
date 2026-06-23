@@ -25,30 +25,28 @@ def resolve_function(
     
     # Get function from database
     try:
-        func_result = db.query_raw(
-            'SELECT id, name, displayName, description, enabled, pricePerUnit, unitSize, enrichPricePerUnit, requiresAi, inputSchema, timeout, defaultModelId, fallbackModelId, createdAt, updatedAt FROM OrchFunction WHERE name = ? AND enabled = 1',
-            function_name
+        func_result = db.orchfunction.find_first(
+            where={"name": function_name, "enabled": True}
         )
         
-        if not func_result or len(func_result) == 0:
+        if not func_result:
             return False, None, f"Function '{function_name}' not found or disabled"
         
-        func_config = func_result[0] if isinstance(func_result[0], dict) else {}
+        func_config = func_result.dict() if hasattr(func_result, 'dict') else vars(func_result)
         
     except Exception as e:
         return False, None, f"Database error: {str(e)}"
     
     # Get client and check permissions
     try:
-        client_result = db.query_raw(
-            'SELECT id, name, token, enabled, rateLimit, allowedFunctions, allowedModels, requestCount, lastRequestAt, createdAt FROM OrchClient WHERE id = ? AND enabled = 1',
-            client_id
+        client_result = db.orchclient.find_first(
+            where={"id": client_id, "enabled": True}
         )
         
-        if not client_result or len(client_result) == 0:
+        if not client_result:
             return False, None, "Client not found or disabled"
         
-        client = client_result[0] if isinstance(client_result[0], dict) else {}
+        client = client_result.dict() if hasattr(client_result, 'dict') else vars(client_result)
         
         # Check if client has permission to use this function
         allowed_functions = client.get("allowedFunctions")
@@ -77,26 +75,21 @@ def get_allowed_models_for_function(
     
     try:
         # Get function's allowed models
-        func_result = db.query_raw(
-            'SELECT allowedModels FROM OrchFunction WHERE name = ?',
-            function_name
+        # Get function's allowed models
+        func_result = db.orchfunction.find_first(
+            where={"name": function_name}
         )
         func_models = set()
-        if func_result and isinstance(func_result[0], dict):
-            models_str = func_result[0].get("allowedModels")
-            if models_str:
-                func_models = set(json.loads(models_str))
+        if func_result and getattr(func_result, "allowedModels", None):
+            func_models = set(json.loads(func_result.allowedModels))
         
         # Get client's allowed models
-        client_result = db.query_raw(
-            'SELECT allowedModels FROM OrchClient WHERE id = ?',
-            client_id
+        client_result = db.orchclient.find_first(
+            where={"id": client_id}
         )
         client_models = set()
-        if client_result and isinstance(client_result[0], dict):
-            models_str = client_result[0].get("allowedModels")
-            if models_str:
-                client_models = set(json.loads(models_str))
+        if client_result and getattr(client_result, "allowedModels", None):
+            client_models = set(json.loads(client_result.allowedModels))
         
         # If both have restrictions, take intersection
         if func_models and client_models:

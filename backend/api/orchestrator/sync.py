@@ -72,27 +72,25 @@ def sync_builtin_functions():
     for name, config in BUILTIN_FUNCTIONS.items():
         try:
             # Check if function exists
-            existing = db.query_raw(
-                "SELECT id FROM OrchFunction WHERE name = ?",
-                name
+            existing = db.orchfunction.find_first(
+                where={"name": name}
             )
             
-            if not existing or len(existing) == 0:
+            if not existing:
                 # Create new function
                 func_id = str(uuid.uuid4())
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                db.execute_raw('''
-                    INSERT INTO OrchFunction 
-                    (id, name, displayName, description, enabled, pricePerUnit, unitSize, requiresAi, timeout, createdAt, updatedAt)
-                    VALUES (?, ?, ?, ?, 1, 0.0, 1000, ?, 30000, ?, ?)
-                ''',
-                    func_id,
-                    name,
-                    config["displayName"],
-                    config["description"],
-                    1 if config["requiresAi"] else 0,
-                    now,
-                    now
+                db.orchfunction.create(
+                    data={
+                        "id": func_id,
+                        "name": name,
+                        "displayName": config["displayName"],
+                        "description": config["description"],
+                        "enabled": True,
+                        "pricePerUnit": 0.0,
+                        "unitSize": 1000,
+                        "requiresAi": bool(config["requiresAi"]),
+                        "timeout": 30000
+                    }
                 )
                 print(f"[FunctionSync] ✅ Created built-in function: {name}")
             else:

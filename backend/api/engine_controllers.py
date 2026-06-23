@@ -38,37 +38,43 @@ def get_model_with_fallbacks(db, model_id):
     Returns list of model dicts in priority order: [primary, fallback1, fallback2, fallback3]
     """
     try:
-        result = db.query_raw('''
-            SELECT m.id, m.name, m.providerModelId, m.providerId,
-                   m.costPerInputToken, m.costPerOutputToken,
-                   m.fallback1Id, m.fallback2Id, m.fallback3Id,
-                   m.rpm,
-                   p.baseUrl, p.apiKey
-            FROM AIModel m
-            JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.id = ?
-        ''', model_id)
+        model = db.aimodel.find_unique(
+            where={"id": model_id},
+            include={"provider": True}
+        )
         
-        if not result:
+        if not model or not model.provider:
             return []
-        
-        primary = result[0] if isinstance(result[0], dict) else {}
+            
+        def _to_dict(m):
+            return {
+                "id": m.id,
+                "name": m.name,
+                "providerModelId": m.providerModelId,
+                "providerId": m.providerId,
+                "costPerInputToken": m.costPerInputToken,
+                "costPerOutputToken": m.costPerOutputToken,
+                "fallback1Id": m.fallback1Id,
+                "fallback2Id": m.fallback2Id,
+                "fallback3Id": m.fallback3Id,
+                "rpm": m.rpm,
+                "baseUrl": m.provider.baseUrl,
+                "apiKey": m.provider.apiKey
+            }
+            
+        primary = _to_dict(model)
         models = [primary]
         
         # Fetch fallbacks
         for fallback_key in ['fallback1Id', 'fallback2Id', 'fallback3Id']:
             fallback_id = primary.get(fallback_key)
             if fallback_id:
-                fb_result = db.query_raw('''
-                    SELECT m.id, m.name, m.providerModelId, m.providerId,
-                           m.costPerInputToken, m.costPerOutputToken,
-                           p.baseUrl, p.apiKey
-                    FROM AIModel m
-                    JOIN AIProvider p ON m.providerId = p.id
-                    WHERE m.id = ?
-                ''', fallback_id)
-                if fb_result and isinstance(fb_result[0], dict):
-                    models.append(fb_result[0])
+                fb_model = db.aimodel.find_unique(
+                    where={"id": fallback_id},
+                    include={"provider": True}
+                )
+                if fb_model and fb_model.provider:
+                    models.append(_to_dict(fb_model))
         
         return models
     except Exception as e:
@@ -80,26 +86,16 @@ def get_model_with_fallbacks(db, model_id):
 def check_orchestrator_model(db, model_id):
     """Check if a model is an extraction orchestrator model."""
     try:
-        result = db.query_raw(
-            'SELECT isOrchestrator FROM AIModel WHERE id = ?',
-            model_id
-        )
-        if result and isinstance(result[0], dict):
-            return bool(result[0].get("isOrchestrator", False))
-        return False
+        model = db.aimodel.find_unique(where={"id": model_id})
+        return bool(model.isOrchestrator) if model else False
     except Exception:
         return False
 
 def check_sentiment_model(db, model_id):
     """Check if a model is a sentiment analysis model."""
     try:
-        result = db.query_raw(
-            'SELECT isSentiment FROM AIModel WHERE id = ?',
-            model_id
-        )
-        if result and isinstance(result[0], dict):
-            return bool(result[0].get("isSentiment", False))
-        return False
+        model = db.aimodel.find_unique(where={"id": model_id})
+        return bool(model.isSentiment) if model else False
     except Exception:
         return False
 
@@ -194,18 +190,13 @@ def execute_orchestrator_request(request, db, messages, model_data, selected_fun
     
     if is_orch_client:
         # OrchClient (n8n): use OrchFunction directly, no UserFunction needed
-        user_functions = db.query_raw(f'''
-            SELECT of.name as func_name, of.displayName, of.description,
-                   of.pricePerUnit, of.unitSize, of.enrichPricePerUnit,
-                   of.requiresAi, of.defaultModelId,
-                   of.name as functionName, 1 as enabled, NULL as outputTemplate, NULL as config
-            FROM OrchFunction of
-            WHERE of.enabled = 1 AND of.name IN ({placeholders})
-        ''', *list(selected_functions))
+        orch_funcs = db.orchfunction.find_many(
+            where={"enabled": True, "name": {"in": list(selected_functions)}}
+        )
         
-        if not user_functions or len(user_functions) == 0:
-            all_enabled = db.query_raw('SELECT name FROM OrchFunction WHERE enabled = 1')
-            enabled_names = [f.get("name") for f in (all_enabled or []) if isinstance(f, dict)]
+        if not orch_funcs or len(orch_funcs) == 0:
+            all_enabled = db.orchfunction.find_many(where={"enabled": True})
+            enabled_names = [f.name for f in all_enabled]
             invalid = [f for f in selected_functions if f not in enabled_names]
             return JsonResponse({
                 "error": {
@@ -214,27 +205,60 @@ def execute_orchestrator_request(request, db, messages, model_data, selected_fun
                     "code": "invalid_functions"
                 }
             }, status=400)
+            
+        uf_list = []
+        for of in orch_funcs:
+            uf_list.append({
+                "func_name": of.name,
+                "displayName": of.displayName,
+                "description": of.description,
+                "pricePerUnit": of.pricePerUnit,
+                "unitSize": of.unitSize,
+                "enrichPricePerUnit": of.enrichPricePerUnit,
+                "requiresAi": of.requiresAi,
+                "defaultModelId": of.defaultModelId,
+                "functionName": of.name,
+                "enabled": 1,
+                "outputTemplate": None,
+                "config": None
+            })
+        user_functions = uf_list
     else:
-        # Regular user: use UserFunction join
-        query_params = [user_id] + list(selected_functions)
-        user_functions = db.query_raw(f'''
-            SELECT uf.id, uf.functionName, uf.enabled, uf.outputTemplate, uf.config,
-                   of.name as func_name, of.displayName, of.description, 
-                   of.pricePerUnit, of.unitSize, of.enrichPricePerUnit,
-                   of.requiresAi, of.defaultModelId
-            FROM UserFunction uf 
-            JOIN OrchFunction of ON uf.functionName = of.name 
-            WHERE uf.userId = ? AND uf.enabled = 1 AND of.enabled = 1
-            AND of.name IN ({placeholders})
-        ''', *query_params)
+        # Regular user: fetch UserFunctions then OrchFunctions
+        user_funcs = db.userfunction.find_many(
+            where={"userId": user_id, "enabled": True, "functionName": {"in": list(selected_functions)}}
+        )
+        
+        uf_names = [uf.functionName for uf in user_funcs]
+        orch_funcs = db.orchfunction.find_many(
+            where={"enabled": True, "name": {"in": uf_names}}
+        )
+        orch_dict = {of.name: of for of in orch_funcs}
+        
+        uf_list = []
+        for uf in user_funcs:
+            of = orch_dict.get(uf.functionName)
+            if of:
+                uf_list.append({
+                    "id": uf.id,
+                    "functionName": uf.functionName,
+                    "enabled": uf.enabled,
+                    "outputTemplate": uf.outputTemplate,
+                    "config": uf.config,
+                    "func_name": of.name,
+                    "displayName": of.displayName,
+                    "description": of.description,
+                    "pricePerUnit": of.pricePerUnit,
+                    "unitSize": of.unitSize,
+                    "enrichPricePerUnit": of.enrichPricePerUnit,
+                    "requiresAi": of.requiresAi,
+                    "defaultModelId": of.defaultModelId
+                })
+        user_functions = uf_list
         
         if not user_functions or len(user_functions) == 0:
-            all_enabled = db.query_raw('''
-                SELECT of.name FROM UserFunction uf 
-                JOIN OrchFunction of ON uf.functionName = of.name 
-                WHERE uf.userId = ? AND uf.enabled = 1 AND of.enabled = 1
-            ''', user_id)
-            enabled_names = [f.get("name") for f in (all_enabled or []) if isinstance(f, dict)]
+            all_user_funcs = db.userfunction.find_many(where={"userId": user_id, "enabled": True})
+            enabled_names = [uf.functionName for uf in all_user_funcs]
             invalid = [f for f in selected_functions if f not in enabled_names]
             
             return JsonResponse({
@@ -253,17 +277,16 @@ def execute_orchestrator_request(request, db, messages, model_data, selected_fun
             func_name = uf.get("func_name") or uf.get("functionName")
             if is_orch_client:
                 # OrchClient: no UserFunctionKey, keys come from OrchFunction defaults
-                keys = db.query_raw(
-                    'SELECT key, description FROM UserFunctionKey WHERE functionName = ? LIMIT 50',
-                    func_name
+                keys = db.userfunctionkey.find_many(
+                    where={"functionName": func_name},
+                    take=50
                 )
             else:
-                keys = db.query_raw(
-                    'SELECT key, description FROM UserFunctionKey WHERE userId = ? AND functionName = ?',
-                    user_id, func_name
+                keys = db.userfunctionkey.find_many(
+                    where={"userId": user_id, "functionName": func_name}
                 )
             if keys:
-                key_list = [{"key": k.get("key"), "description": k.get("description")} for k in keys if isinstance(k, dict)]
+                key_list = [{"key": k.key, "description": k.description} for k in keys]
                 func_keys[func_name] = key_list
                 all_key_names.extend([k["key"] for k in key_list])
     
@@ -483,20 +506,18 @@ def execute_orchestrator_request(request, db, messages, model_data, selected_fun
             })
     
     # Log execution
-    exec_user_id = user_id if user_id else 'orch_client'
-    db.execute_raw('''
-        INSERT INTO OrchExecution 
-        (id, userId, functionName, input, output, success, usedAi, durationMs, createdAt)
-        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-    ''',
-        str(uuid.uuid4()),
-        exec_user_id,
-        ','.join(results.keys()),
-        user_content[:500],
-        json.dumps(results, ensure_ascii=False),
-        1 if ai_was_called else 0,
-        duration,
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.orchexecution.create(
+        data={
+            "id": str(uuid.uuid4()),
+            "userId": exec_user_id if exec_user_id != 'orch_client' else None,
+            "clientId": exec_user_id if exec_user_id == 'orch_client' else None,
+            "functionName": ','.join(results.keys()),
+            "input": user_content[:500],
+            "output": json.dumps(results, ensure_ascii=False),
+            "success": True,
+            "usedAi": ai_was_called,
+            "durationMs": duration
+        }
     )
     
     # Log Metric for Dashboard
@@ -667,17 +688,20 @@ TAREFA: Analise o template/texto abaixo e extraia os valores para cada chave esp
 Responda APENAS com JSON válido, sem explicações ou markdown:
 {{"chave1": "valor_ou_objeto", "chave2": "valor_ou_objeto"}}"""
     
-    # Get model info for API call
-    model_info = db.query_raw('''
-        SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-        FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-        WHERE m.id = ?
-    ''', model_data.get("id"))
+    model_info = db.aimodel.find_unique(
+        where={"id": model_data.get("id")},
+        include={"provider": True}
+    )
     
-    if not model_info or len(model_info) == 0:
+    if not model_info or not model_info.provider:
         return {}, {"prompt_tokens": 0, "completion_tokens": 0}
     
-    m = model_info[0]
+    m = {
+        "providerModelId": model_info.providerModelId,
+        "baseUrl": model_info.provider.baseUrl,
+        "apiKey": model_info.provider.apiKey,
+        "providerId": model_info.providerId
+    }
     api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
     
     try:
@@ -747,16 +771,20 @@ Texto: "{user_content}"
 Responda APENAS no formato JSON:
 {{"key1": "valor1", "key2": "valor2"}}"""
     
-    model_info = db.query_raw('''
-        SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-        FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-        WHERE m.id = ?
-    ''', model_id)
+    model_info = db.aimodel.find_unique(
+        where={"id": model_id},
+        include={"provider": True}
+    )
     
-    if not model_info or len(model_info) == 0:
+    if not model_info or not model_info.provider:
         return {}, {"prompt_tokens": 0, "completion_tokens": 0}
     
-    m = model_info[0]
+    m = {
+        "providerModelId": model_info.providerModelId,
+        "baseUrl": model_info.provider.baseUrl,
+        "apiKey": model_info.provider.apiKey,
+        "providerId": model_info.providerId
+    }
     api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
     
     try:
@@ -1171,17 +1199,20 @@ NÃO invente valores. NÃO copie exemplos. Cada campo deve ser preenchido com ba
 
 ## RESPOSTA (JSON):"""
 
-    # Get model info for API call
-    model_info = db.query_raw('''
-        SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-        FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-        WHERE m.id = ?
-    ''', model_data.get("id"))
+    model_info = db.aimodel.find_unique(
+        where={"id": model_data.get("id")},
+        include={"provider": True}
+    )
     
-    if not model_info or len(model_info) == 0:
+    if not model_info or not model_info.provider:
         return None
     
-    m = model_info[0]
+    m = {
+        "providerModelId": model_info.providerModelId,
+        "baseUrl": model_info.provider.baseUrl,
+        "apiKey": model_info.provider.apiKey,
+        "providerId": model_info.providerId
+    }
     api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
     
     # Debug log: what we're sending to the formatter
@@ -1309,7 +1340,7 @@ def execute_sentiment_request(request, db, messages, model_data):
     """
     from .sentiment_controller import process_sentiment_analysis, parse_sentiment_input
     
-    user_id = request.user_id
+    user_id = getattr(request.user, 'id', None)
     start_time = time.time()
     
     # Get user content
@@ -1404,7 +1435,15 @@ async def chat_completions(request):
         db = get_db()
         
         # 1. Resolve Target (Agent or Model)
-        agent = await sync_to_async(db.agent.find_unique)(where={"id": target_id}, include={"model": True})
+        target_id_clean = target_id.strip() if target_id else ""
+        try:
+            agent = await sync_to_async(db.agent.find_unique)(where={"id": target_id_clean}, include={"model": True})
+        except:
+            agent = None
+            
+        if not agent:
+            agent = await sync_to_async(db.agent.find_first)(where={"name": target_id_clean}, include={"model": True})
+            
         model_id = None
         system_prompt = None
         
@@ -1414,7 +1453,11 @@ async def chat_completions(request):
             if system_prompt:
                 messages = [{"role": "system", "content": system_prompt}] + messages
         else:
-            model_id = target_id
+            model_obj = await sync_to_async(db.aimodel.find_first)(where={"name": target_id_clean})
+            if model_obj:
+                model_id = model_obj.id
+            else:
+                model_id = target_id_clean
             
             # ── Auto-register agent from system message ──
             sys_msgs = [m for m in messages if m.get("role") == "system"]

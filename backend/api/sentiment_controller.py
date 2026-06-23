@@ -377,16 +377,20 @@ def generate_synonyms_with_ai(db, domain: str, category: str, model_id: str):
         
         # Call AI (using internal full classification or direct request)
         try:
-            model_info = db.query_raw('''
-                SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-                FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-                WHERE m.id = ?
-            ''', model_id)
+            model_info = db.aimodel.find_unique(
+                where={"id": model_id},
+                include={"provider": True}
+            )
             
-            if not model_info:
+            if not model_info or not model_info.provider:
                 return
             
-            m = model_info[0]
+            m = {
+                "providerModelId": model_info.providerModelId,
+                "baseUrl": model_info.provider.baseUrl,
+                "apiKey": model_info.provider.apiKey,
+                "providerId": model_info.providerId
+            }
             api_key = m.get("apiKey") # Simplified lookup
             
             import requests
@@ -827,16 +831,20 @@ Se ele não escolheu nenhuma opção válida do menu ou se a mensagem não se re
 """
 
     try:
-        model_info = db.query_raw('''
-            SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-            FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.id = ?
-        ''', model_data.get("id"))
+        model_info = db.aimodel.find_unique(
+            where={"id": model_data.get("id")},
+            include={"provider": True}
+        )
         
-        if not model_info:
+        if not model_info or not model_info.provider:
             return None
         
-        m = model_info[0]
+        m = {
+            "providerModelId": model_info.providerModelId,
+            "baseUrl": model_info.provider.baseUrl,
+            "apiKey": model_info.provider.apiKey,
+            "providerId": model_info.providerId
+        }
         api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
         
         resp = requests.post(
@@ -919,16 +927,20 @@ Responda APENAS com o nome da categoria, sem explicações."""
         messages = [{"role": "user", "content": prompt}]
     
     try:
-        model_info = db.query_raw('''
-            SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-            FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.id = ?
-        ''', model_data.get("id"))
+        model_info = db.aimodel.find_unique(
+            where={"id": model_data.get("id")},
+            include={"provider": True}
+        )
         
-        if not model_info:
+        if not model_info or not model_info.provider:
             return None
         
-        m = model_info[0]
+        m = {
+            "providerModelId": model_info.providerModelId,
+            "baseUrl": model_info.provider.baseUrl,
+            "apiKey": model_info.provider.apiKey,
+            "providerId": model_info.providerId
+        }
         api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
         
         resp = requests.post(
@@ -983,16 +995,20 @@ Responda APENAS com uma palavra (a categoria ou "incompreendido")."""
     messages.append({"role": "user", "content": prompt})
     
     try:
-        model_info = db.query_raw('''
-            SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-            FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.id = ?
-        ''', model_id)
+        model_info = db.aimodel.find_unique(
+            where={"id": model_id},
+            include={"provider": True}
+        )
         
-        if not model_info:
+        if not model_info or not model_info.provider:
             return proposed_classification, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         
-        m = model_info[0]
+        m = {
+            "providerModelId": model_info.providerModelId,
+            "baseUrl": model_info.provider.baseUrl,
+            "apiKey": model_info.provider.apiKey,
+            "providerId": model_info.providerId
+        }
         api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
         
         resp = requests.post(
@@ -1106,16 +1122,20 @@ Responda APENAS com uma palavra (a categoria ou "incompreendido")"""
     messages.append({"role": "user", "content": prompt})
     
     try:
-        model_info = db.query_raw('''
-            SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-            FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.id = ?
-        ''', model_id)
+        model_info = db.aimodel.find_unique(
+            where={"id": model_id},
+            include={"provider": True}
+        )
         
-        if not model_info:
+        if not model_info or not model_info.provider:
             return None, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         
-        m = model_info[0]
+        m = {
+            "providerModelId": model_info.providerModelId,
+            "baseUrl": model_info.provider.baseUrl,
+            "apiKey": model_info.provider.apiKey,
+            "providerId": model_info.providerId
+        }
         api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
         
         resp = requests.post(
@@ -1260,16 +1280,20 @@ Responda APENAS com uma palavra: single ou multiple"""
     messages = [{"role": "user", "content": prompt}]
     
     try:
-        model_info = db.query_raw('''
-            SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-            FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.id = ?
-        ''', model_id)
+        model_info = db.aimodel.find_unique(
+            where={"id": model_id},
+            include={"provider": True}
+        )
         
-        if not model_info:
+        if not model_info or not model_info.provider:
             return "single", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         
-        m = model_info[0]
+        m = {
+            "providerModelId": model_info.providerModelId,
+            "baseUrl": model_info.provider.baseUrl,
+            "apiKey": model_info.provider.apiKey,
+            "providerId": model_info.providerId
+        }
         api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
         
         resp = requests.post(
@@ -1353,16 +1377,20 @@ Responda APENAS com as categorias separadas por vírgula, sem explicações."""
     messages.append({"role": "user", "content": prompt})
     
     try:
-        model_info = db.query_raw('''
-            SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-            FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.id = ?
-        ''', model_id)
+        model_info = db.aimodel.find_unique(
+            where={"id": model_id},
+            include={"provider": True}
+        )
         
-        if not model_info:
+        if not model_info or not model_info.provider:
             return [], {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         
-        m = model_info[0]
+        m = {
+            "providerModelId": model_info.providerModelId,
+            "baseUrl": model_info.provider.baseUrl,
+            "apiKey": model_info.provider.apiKey,
+            "providerId": model_info.providerId
+        }
         api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
         
         resp = requests.post(
@@ -1943,13 +1971,12 @@ def sentiment_analyze(request):
             try:
                 db = get_db()
                 # Check OrchClient
-                clients = db.query_raw(
-                    'SELECT id FROM OrchClient WHERE token = ? AND enabled = 1',
-                    token
+                client = db.orchclient.find_first(
+                    where={"token": token, "enabled": True}
                 )
-                if clients and len(clients) > 0:
+                if client:
                     is_authenticated = True
-                    request.orch_client_id = clients[0]['id'] if isinstance(clients[0], dict) else getattr(clients[0], 'id')
+                    request.orch_client_id = client.id
                 else:
                     # Check User API Key
                     if token.startswith('sk-agent-'):
@@ -2233,7 +2260,7 @@ def sentiment_logs_review(request, log_id):
                     "word": add_synonym["word"].lower(),
                     "category": add_synonym["category"].lower(),
                     "source": "admin",
-                    "approvedBy": request.user_id if hasattr(request, 'user_id') else None
+                    "approvedBy": getattr(request.user, 'id', None)
                 })
             except Exception as e:
                 print(f"[SYNONYM ERROR] {e}")  # Word might already exist
@@ -2280,9 +2307,13 @@ def sentiment_synonyms_list(request):
     
     if request.method == "GET":
         try:
-            synonyms = db.query_raw('''
-                SELECT * FROM SentimentSynonym ORDER BY useCount DESC
-            ''')
+            synonyms_list = db.sentimentsynonym.find_many(
+                order={"useCount": "desc"}
+            )
+            synonyms = []
+            for s in synonyms_list:
+                s_dict = s.model_dump() if hasattr(s, 'model_dump') else s.dict() if hasattr(s, 'dict') else vars(s)
+                synonyms.append(s_dict)
             return JsonResponse({"synonyms": synonyms, "count": len(synonyms)})
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
@@ -2305,7 +2336,7 @@ def sentiment_synonyms_list(request):
                 "word": word,
                 "category": category,
                 "source": "admin",
-                "approvedBy": request.user_id if hasattr(request, 'user_id') else None
+                "approvedBy": getattr(request.user, 'id', None)
             })
             
             return JsonResponse({"success": True, "id": synonym_id, "word": word, "category": category})
@@ -2379,10 +2410,12 @@ def sentiment_stats(request):
         pending_reviews = db.sentimentlog.count(where={"isReviewed": False})
         
         # Cache hits vs AI calls
-        source_breakdown = db.query_raw('''
-            SELECT source, COUNT(*) as count FROM SentimentLog 
-            GROUP BY source ORDER BY count DESC
-        ''')
+        source_group = db.sentimentlog.group_by(
+            by=["source"],
+            count={"_all": True}
+        )
+        source_breakdown = [{"source": g["source"], "count": g["_count"]["_all"]} for g in source_group]
+        source_breakdown = sorted(source_breakdown, key=lambda x: x["count"], reverse=True)
         
         # Total synonyms
         total_synonyms = db.sentimentsynonym.count()
@@ -2429,13 +2462,13 @@ def sentiment_stats_by_domain(request):
         pending_reviews = db.sentimentlog.count(where={"domain": domain, "isReviewed": False})
         
         # Source breakdown
-        source_breakdown_raw = db.query_raw('''
-            SELECT source, COUNT(*) as count 
-            FROM SentimentLog 
-            WHERE domain = ?
-            GROUP BY source 
-            ORDER BY count DESC
-        ''', domain)
+        source_group = db.sentimentlog.group_by(
+            by=["source"],
+            where={"domain": domain},
+            count={"_all": True}
+        )
+        source_breakdown_raw = [{"source": g["source"], "count": g["_count"]["_all"]} for g in source_group]
+        source_breakdown_raw = sorted(source_breakdown_raw, key=lambda x: x["count"], reverse=True)
         
         source_breakdown = [
             {"source": row["source"], "count": row["count"]} 

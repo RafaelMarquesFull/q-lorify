@@ -354,22 +354,16 @@ def get_performance_stats(request):
              })
 
         # 2. Source Distribution (Cache vs ML vs AI)
-        # Prisma SQLite stores as integer (ms) usually in raw queries or requires specific formatting
-        # Let's try passing the timestamp directly or ensuring proper casting.
-        # Actually, simpler to use Prisma's objects via 'groupby' but let's stick to raw with ms.
-        start_ts = int(start_date.timestamp() * 1000)
-        
-        sources = db.query_raw(
-            '''
-            SELECT source, COUNT(*) as count, AVG(executionTimeMs) as latency
-            FROM SentimentLog 
-            WHERE domain = ? AND timestamp >= ?
-            GROUP BY source
-            ''',
-            domain, start_ts
+        sources = db.sentimentlog.group_by(
+            by=["source"],
+            where={
+                "domain": domain,
+                "timestamp": {"gte": start_date}
+            },
+            count={"_all": True},
+            avg={"executionTimeMs": True}
         )
-        print(f"[DEBUG STATS] Sources Raw: {sources}")
-        # Note: adjust query syntax if using Postgres vs SQLite. SQLite handles ? params.
+        print(f"[DEBUG STATS] Sources GroupBy: {sources}")
         
         stats_map = {
             "learned_cache": 0,
@@ -383,9 +377,9 @@ def get_performance_stats(request):
         latency_map = {}
         
         for row in sources:
-            src = row['source']
-            cnt = row['count']
-            lat = row['latency'] or 0
+            src = row.get('source')
+            cnt = row.get('_count', {}).get('_all', 0)
+            lat = row.get('_avg', {}).get('executionTimeMs', 0) or 0
             
             # Normalize sources
             if 'cache' in src: key = "learned_cache"

@@ -183,29 +183,27 @@ def compile_prompt_rules(db, system_prompt: str, rules_model_id: str) -> Tuple[b
         return False, None, "No rules model ID configured"
 
     # Get model info
-    model_info = db.query_raw('''
-        SELECT m.providerModelId, p.baseUrl, p.apiKey, m.providerId
-        FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-        WHERE m.id = ?
-    ''', rules_model_id)
+    m = db.aimodel.find_unique(
+        where={"id": rules_model_id},
+        include={"provider": True}
+    )
 
-    if not model_info or len(model_info) == 0:
+    if not m or not m.provider:
         return False, None, f"Rules model '{rules_model_id}' not found"
 
-    m = model_info[0]
-    api_key = get_next_api_key(m.get("providerId")) or m.get("apiKey")
+    api_key = get_next_api_key(m.providerId) or m.provider.apiKey
 
     if not api_key:
         return False, None, "No API key available for rules model"
 
     user_message = _META_PROMPT_USER.format(system_prompt=system_prompt)
 
-    print(f"[RulesCompiler] Compiling rules with model: {m.get('providerModelId')}")
+    print(f"[RulesCompiler] Compiling rules with model: {m.providerModelId}")
     print(f"[RulesCompiler] System prompt length: {len(system_prompt)} chars")
 
     try:
         payload = {
-            "model": m.get("providerModelId"),
+            "model": m.providerModelId,
             "messages": [
                 {"role": "system", "content": _META_PROMPT_SYSTEM},
                 {"role": "user", "content": user_message}
@@ -215,7 +213,7 @@ def compile_prompt_rules(db, system_prompt: str, rules_model_id: str) -> Tuple[b
         }
 
         resp = requests.post(
-            f"{m.get('baseUrl')}/chat/completions",
+            f"{m.provider.baseUrl}/chat/completions",
             json=payload,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             timeout=60
@@ -411,18 +409,25 @@ def _ai_fallback_classify(
         db = get_db()
 
         # Find the cheapest/fastest model available for fallback
-        fallback_models = db.query_raw('''
-            SELECT m.id, m.providerModelId, p.baseUrl, p.apiKey, m.providerId,
-                   m.costPerInputToken, m.costPerOutputToken
-            FROM AIModel m JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.isPublic = 1
-            ORDER BY m.costPerInputToken ASC LIMIT 1
-        ''')
+        fallback_models = db.aimodel.find_many(
+            where={"isPublic": True},
+            order={"costPerInputToken": "asc"},
+            take=1,
+            include={"provider": True}
+        )
         if not fallback_models:
             print("[RulesApply] AI fallback: no model available")
             return None
 
-        model_data = fallback_models[0]
+        model_data = {
+            "id": fallback_models[0].id,
+            "providerModelId": fallback_models[0].providerModelId,
+            "baseUrl": fallback_models[0].provider.baseUrl if fallback_models[0].provider else None,
+            "apiKey": fallback_models[0].provider.apiKey if fallback_models[0].provider else None,
+            "providerId": fallback_models[0].providerId,
+            "costPerInputToken": fallback_models[0].costPerInputToken,
+            "costPerOutputToken": fallback_models[0].costPerOutputToken
+        }
 
         # Build concise field summary
         field_lines = []

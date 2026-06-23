@@ -16,8 +16,8 @@ def admin_settings_rules_model(request):
     db = get_db()
 
     if request.method == "GET":
-        rows = db.query_raw("SELECT value FROM SystemSetting WHERE key = 'rulesModelId'")
-        model_id = rows[0]["value"] if rows else None
+        setting = db.systemsetting.find_unique(where={"key": "rulesModelId"})
+        model_id = setting.value if setting else None
         model_name = None
         if model_id:
             m = db.aimodel.find_unique(where={"id": model_id})
@@ -35,10 +35,12 @@ def admin_settings_rules_model(request):
                 return JsonResponse({"error": "Model not found"}, status=404)
             from datetime import datetime
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            db.execute_raw(
-                "INSERT INTO SystemSetting (key, value, updatedAt) VALUES ('rulesModelId', ?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = ?, updatedAt = ?",
-                model_id, now, model_id, now
+            db.systemsetting.upsert(
+                where={"key": "rulesModelId"},
+                data={
+                    "create": {"key": "rulesModelId", "value": model_id, "updatedAt": now},
+                    "update": {"value": model_id, "updatedAt": now}
+                }
             )
             return JsonResponse({"success": True, "rulesModelId": model_id, "modelName": m.name})
         except Exception as e:
@@ -201,8 +203,8 @@ def compile_agent_rules(request, agent_id):
         return JsonResponse({"error": "Agent not found"}, status=404)
 
     # Use global rulesModelId from SystemSetting
-    rows = db.query_raw("SELECT value FROM SystemSetting WHERE key = 'rulesModelId'")
-    rules_model_id = rows[0]["value"] if rows else None
+    setting = db.systemsetting.find_unique(where={"key": "rulesModelId"})
+    rules_model_id = setting.value if setting else None
     if not rules_model_id:
         return JsonResponse({"error": "Modelo robusto não configurado. Selecione um modelo na aba Agentes & Rules."}, status=400)
 
@@ -279,30 +281,27 @@ def list_models_public(request):
     """Return all public models with detailed info for client page"""
     db = get_db()
     if request.method == "GET":
-        models = db.query_raw('''
-            SELECT m.*, p.name as providerName 
-            FROM AIModel m 
-            JOIN AIProvider p ON m.providerId = p.id
-            WHERE m.isPublic = 1
-            ORDER BY m.name ASC
-        ''')
+        models = db.aimodel.find_many(
+            where={"isPublic": True},
+            order={"name": "asc"},
+            include={"provider": True}
+        )
         
         result = []
         for m in models:
-            if isinstance(m, dict):
-                result.append({
-                    "id": m.get("id"),
-                    "name": m.get("name"),
-                    "providerModelId": m.get("providerModelId"),
-                    "provider": "QLORIFY", # White-label masking
-                    "costIn": m.get("costPerInputToken", 0),
-                    "costOut": m.get("costPerOutputToken", 0),
-                    "description": m.get("description"),
-                    "rpm": m.get("rpm", 60),
-                    "integrationGuide": m.get("integrationGuide"),
-                    "isOrchestrator": bool(m.get("isOrchestrator")),
-                    "isSentiment": bool(m.get("isSentiment"))
-                })
+            result.append({
+                "id": m.id,
+                "name": m.name,
+                "providerModelId": m.providerModelId,
+                "provider": "QLORIFY", # White-label masking
+                "costIn": m.costPerInputToken,
+                "costOut": m.costPerOutputToken,
+                "description": m.description,
+                "rpm": m.rpm,
+                "integrationGuide": m.integrationGuide,
+                "isOrchestrator": m.isOrchestrator,
+                "isSentiment": m.isSentiment
+            })
         
         return JsonResponse(result, safe=False)
 
@@ -312,18 +311,18 @@ def list_functions_public(request):
     db = get_db()
     if request.method == "GET":
         try:
-            functions = db.query_raw(
-                'SELECT name, displayName, description FROM OrchFunction WHERE enabled = 1 ORDER BY name ASC'
+            functions = db.orchfunction.find_many(
+                where={"enabled": True},
+                order={"name": "asc"}
             )
             
             result = []
             for f in functions:
-                if isinstance(f, dict):
-                    result.append({
-                        "name": f.get("name"),
-                        "displayName": f.get("displayName"),
-                        "description": f.get("description"),
-                    })
+                result.append({
+                    "name": f.name,
+                    "displayName": f.displayName,
+                    "description": f.description,
+                })
             
             return JsonResponse(result, safe=False)
         except Exception as e:

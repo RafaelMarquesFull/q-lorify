@@ -16,6 +16,7 @@ interface Model {
     rpm: number
     integrationGuide: string | null
     isOrchestrator: boolean
+    isSentiment?: boolean
 }
 
 export default function ModelsPage() {
@@ -23,6 +24,34 @@ export default function ModelsPage() {
     const [loading, setLoading] = useState(true)
     const [selectedModel, setSelectedModel] = useState<Model | null>(null)
     const [copied, setCopied] = useState(false)
+
+    const getExampleContent = (model: Model | null) => {
+        if (!model) return "Sua mensagem aqui";
+        if (model.isOrchestrator) return "Remetente: EMPRESA X\\nCNPJ: 94.516.671/0001-53\\nCEP: 96800-001 (Santa Cruz/RS)\\nDestinatário: EMPRESA Y\\nCEP: 88100-001 (São José/SC)";
+        if (model.isSentiment) return "A carga chegou no CD de Cajamar e está aguardando transbordo.";
+        return "Como otimizar a rota de entrega?";
+    };
+
+    const getCurlExample = (model: Model | null) => {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+        const content = getExampleContent(model);
+        return `curl -X POST ${apiUrl}/chat/completions \\
+  -H "Authorization: Bearer sk-agent-SUA_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${model?.name}",
+    "messages": [{
+      "role": "user",
+      "content": "${content}"
+    }]
+  }'`;
+    };
+
+    const getCurlOneline = (model: Model | null) => {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+        const content = getExampleContent(model).replace(/\n/g, '\\n');
+        return `curl -X POST ${apiUrl}/chat/completions -H "Authorization: Bearer sk-agent-SUA_API_KEY" -H "Content-Type: application/json" -d '{"model": "${model?.name}", "messages": [{"role": "user", "content": "${content}"}]}'`;
+    };
 
     useEffect(() => {
         fetchModels()
@@ -156,21 +185,12 @@ export default function ModelsPage() {
                             <h4 className="font-medium flex items-center gap-2">
                                 <Copy className="h-4 w-4" /> Como Integrar
                             </h4>
-                            <div className="relative">
-                                <pre className="bg-black/50 rounded-lg p-4 text-sm overflow-x-auto text-white/80">
-                                    {`curl -X POST http://localhost:8001/api/chat/completions \\
-  -H "Authorization: Bearer sk-agent-SUA_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "${selectedModel?.name}",
-    "messages": [{
-      "role": "user",
-      "content": "Sua mensagem aqui"
-    }]
-  }'`}
+                            <div className="relative max-w-full">
+                                <pre className="bg-black/50 rounded-lg p-4 text-sm overflow-x-hidden text-white/80 whitespace-pre-wrap break-all">
+                                    {getCurlExample(selectedModel)}
                                 </pre>
                                 <button
-                                    onClick={() => copyToClipboard(`curl -X POST http://localhost:8001/api/chat/completions -H "Authorization: Bearer sk-agent-SUA_API_KEY" -H "Content-Type: application/json" -d '{"model": "${selectedModel?.name}", "messages": [{"role": "user", "content": "Sua mensagem"}]}'`)}
+                                    onClick={() => copyToClipboard(getCurlOneline(selectedModel))}
                                     className="absolute top-2 right-2 p-2 bg-white/10 rounded hover:bg-white/20"
                                 >
                                     {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}

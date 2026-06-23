@@ -64,26 +64,21 @@ def functions(request):
             body = json.loads(request.body)
             func_id = str(uuid.uuid4())
             
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            db.execute_raw('''
-                INSERT INTO OrchFunction 
-                (id, name, displayName, description, enabled, pricePerUnit, unitSize, enrichPricePerUnit, requiresAi, inputSchema, timeout, defaultModelId, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''',
-                func_id,
-                body.get("name"),
-                body.get("displayName", body.get("name")),
-                body.get("description"),
-                1 if body.get("enabled", True) else 0,
-                body.get("pricePerUnit", 0.0),
-                body.get("unitSize", 1000),
-                body.get("enrichPricePerUnit", 0.05),
-                1 if body.get("requiresAi", False) else 0,
-                json.dumps(body.get("inputSchema")) if body.get("inputSchema") else None,
-                body.get("timeout", 30000),
-                body.get("defaultModelId") if body.get("defaultModelId") else None,
-                now,
-                now
+            db.orchfunction.create(
+                data={
+                    "id": func_id,
+                    "name": body.get("name"),
+                    "displayName": body.get("displayName", body.get("name")),
+                    "description": body.get("description"),
+                    "enabled": bool(body.get("enabled", True)),
+                    "pricePerUnit": float(body.get("pricePerUnit", 0.0)),
+                    "unitSize": int(body.get("unitSize", 1000)),
+                    "enrichPricePerUnit": float(body.get("enrichPricePerUnit", 0.05)),
+                    "requiresAi": bool(body.get("requiresAi", False)),
+                    "inputSchema": json.dumps(body.get("inputSchema")) if body.get("inputSchema") else None,
+                    "timeout": int(body.get("timeout", 30000)),
+                    "defaultModelId": body.get("defaultModelId") if body.get("defaultModelId") else None
+                }
             )
             
             return JsonResponse({"id": func_id, "name": body.get("name")}, status=201)
@@ -100,52 +95,21 @@ def functions(request):
                 return JsonResponse({"error": "id is required"}, status=400)
             
             # Build dynamic update query
-            updates = []
-            params = []
+            data = {}
+            if "name" in body: data["name"] = body["name"]
+            if "displayName" in body: data["displayName"] = body["displayName"]
+            if "description" in body: data["description"] = body["description"]
+            if "enabled" in body: data["enabled"] = bool(body["enabled"])
+            if "pricePerUnit" in body: data["pricePerUnit"] = float(body["pricePerUnit"])
+            if "unitSize" in body: data["unitSize"] = int(body["unitSize"])
+            if "enrichPricePerUnit" in body: data["enrichPricePerUnit"] = float(body["enrichPricePerUnit"])
+            if "requiresAi" in body: data["requiresAi"] = bool(body["requiresAi"])
+            if "inputSchema" in body: data["inputSchema"] = json.dumps(body["inputSchema"]) if body["inputSchema"] else None
+            if "timeout" in body: data["timeout"] = int(body["timeout"])
+            if "defaultModelId" in body: data["defaultModelId"] = body["defaultModelId"] if body["defaultModelId"] else None
+            if "fallbackModelId" in body: data["fallbackModelId"] = body["fallbackModelId"] if body["fallbackModelId"] else None
             
-            if "name" in body:
-                updates.append("name = ?")
-                params.append(body["name"])
-            if "displayName" in body:
-                updates.append("displayName = ?")
-                params.append(body["displayName"])
-            if "description" in body:
-                updates.append("description = ?")
-                params.append(body["description"])
-            if "enabled" in body:
-                updates.append("enabled = ?")
-                params.append(1 if body["enabled"] else 0)
-            if "pricePerUnit" in body:
-                updates.append("pricePerUnit = ?")
-                params.append(body["pricePerUnit"])
-            if "unitSize" in body:
-                updates.append("unitSize = ?")
-                params.append(body["unitSize"])
-            if "enrichPricePerUnit" in body:
-                updates.append("enrichPricePerUnit = ?")
-                params.append(body["enrichPricePerUnit"])
-            if "requiresAi" in body:
-                updates.append("requiresAi = ?")
-                params.append(1 if body["requiresAi"] else 0)
-            if "inputSchema" in body:
-                updates.append("inputSchema = ?")
-                params.append(json.dumps(body["inputSchema"]) if body["inputSchema"] else None)
-            if "timeout" in body:
-                updates.append("timeout = ?")
-                params.append(body["timeout"])
-            if "defaultModelId" in body:
-                updates.append("defaultModelId = ?")
-                params.append(body["defaultModelId"] if body["defaultModelId"] else None)
-            if "fallbackModelId" in body:
-                updates.append("fallbackModelId = ?")
-                params.append(body["fallbackModelId"] if body["fallbackModelId"] else None)
-            
-            updates.append("updatedAt = ?")
-            params.append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            params.append(func_id)
-            
-            query = f"UPDATE OrchFunction SET {', '.join(updates)} WHERE id = ?"
-            db.execute_raw(query, *params)
+            db.orchfunction.update(where={"id": func_id}, data=data)
             
             return JsonResponse({"success": True})
             
@@ -160,7 +124,7 @@ def functions(request):
             if not func_id:
                 return JsonResponse({"error": "id is required"}, status=400)
             
-            db.execute_raw("DELETE FROM OrchFunction WHERE id = ?", func_id)
+            db.orchfunction.delete(where={"id": func_id})
             
             return JsonResponse({"success": True})
             
@@ -186,25 +150,22 @@ def clients(request):
     
     if request.method == "GET":
         try:
-            result = db.query_raw(
-                'SELECT id, name, token, enabled, rateLimit, allowedFunctions, allowedModels, requestCount, lastRequestAt, createdAt FROM OrchClient ORDER BY createdAt DESC'
-            )
+            result = db.orchclient.find_many(order={"createdAt": "desc"})
             
             clients_list = []
             for c in result:
-                if isinstance(c, dict):
-                    clients_list.append({
-                        "id": c.get("id"),
-                        "name": c.get("name"),
-                        "token": c.get("token")[:12] + "..." if c.get("token") else None,  # Masked
-                        "enabled": bool(c.get("enabled")),
-                        "rateLimit": c.get("rateLimit"),
-                        "allowedFunctions": json.loads(c.get("allowedFunctions")) if c.get("allowedFunctions") else None,
-                        "allowedModels": json.loads(c.get("allowedModels")) if c.get("allowedModels") else None,
-                        "requestCount": c.get("requestCount"),
-                        "lastRequestAt": c.get("lastRequestAt"),
-                        "createdAt": c.get("createdAt")
-                    })
+                clients_list.append({
+                    "id": c.id,
+                    "name": c.name,
+                    "token": c.token[:12] + "..." if c.token else None,  # Masked
+                    "enabled": bool(c.enabled),
+                    "rateLimit": c.rateLimit,
+                    "allowedFunctions": json.loads(c.allowedFunctions) if getattr(c, "allowedFunctions", None) else None,
+                    "allowedModels": json.loads(c.allowedModels) if getattr(c, "allowedModels", None) else None,
+                    "requestCount": c.requestCount,
+                    "lastRequestAt": str(c.lastRequestAt) if c.lastRequestAt else None,
+                    "createdAt": str(c.createdAt) if c.createdAt else None
+                })
             
             return JsonResponse(clients_list, safe=False)
             
@@ -217,20 +178,16 @@ def clients(request):
             client_id = str(uuid.uuid4())
             token = f"orch-{secrets.token_urlsafe(32)}"
             
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            db.execute_raw('''
-                INSERT INTO OrchClient 
-                (id, name, token, enabled, rateLimit, allowedFunctions, allowedModels, requestCount, createdAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
-            ''',
-                client_id,
-                body.get("name", "Novo Cliente"),
-                token,
-                1 if body.get("enabled", True) else 0,
-                body.get("rateLimit", 100),
-                json.dumps(body.get("allowedFunctions")) if body.get("allowedFunctions") else None,
-                json.dumps(body.get("allowedModels")) if body.get("allowedModels") else None,
-                now
+            db.orchclient.create(
+                data={
+                    "id": client_id,
+                    "name": body.get("name", "Novo Cliente"),
+                    "token": token,
+                    "enabled": bool(body.get("enabled", True)),
+                    "rateLimit": int(body.get("rateLimit", 100)),
+                    "allowedFunctions": json.dumps(body.get("allowedFunctions")) if body.get("allowedFunctions") else None,
+                    "allowedModels": json.dumps(body.get("allowedModels")) if body.get("allowedModels") else None
+                }
             )
             
             return JsonResponse({
@@ -250,29 +207,14 @@ def clients(request):
             if not client_id:
                 return JsonResponse({"error": "id is required"}, status=400)
             
-            updates = []
-            params = []
+            data = {}
+            if "name" in body: data["name"] = body["name"]
+            if "enabled" in body: data["enabled"] = bool(body["enabled"])
+            if "rateLimit" in body: data["rateLimit"] = int(body["rateLimit"])
+            if "allowedFunctions" in body: data["allowedFunctions"] = json.dumps(body["allowedFunctions"]) if body["allowedFunctions"] else None
+            if "allowedModels" in body: data["allowedModels"] = json.dumps(body["allowedModels"]) if body["allowedModels"] else None
             
-            if "name" in body:
-                updates.append("name = ?")
-                params.append(body["name"])
-            if "enabled" in body:
-                updates.append("enabled = ?")
-                params.append(1 if body["enabled"] else 0)
-            if "rateLimit" in body:
-                updates.append("rateLimit = ?")
-                params.append(body["rateLimit"])
-            if "allowedFunctions" in body:
-                updates.append("allowedFunctions = ?")
-                params.append(json.dumps(body["allowedFunctions"]) if body["allowedFunctions"] else None)
-            if "allowedModels" in body:
-                updates.append("allowedModels = ?")
-                params.append(json.dumps(body["allowedModels"]) if body["allowedModels"] else None)
-            
-            params.append(client_id)
-            
-            query = f"UPDATE OrchClient SET {', '.join(updates)} WHERE id = ?"
-            db.execute_raw(query, *params)
+            db.orchclient.update(where={"id": client_id}, data=data)
             
             return JsonResponse({"success": True})
             
@@ -287,7 +229,7 @@ def clients(request):
             if not client_id:
                 return JsonResponse({"error": "id is required"}, status=400)
             
-            db.execute_raw("DELETE FROM OrchClient WHERE id = ?", client_id)
+            db.orchclient.delete(where={"id": client_id})
             
             return JsonResponse({"success": True})
             
@@ -315,32 +257,31 @@ def executions(request):
         limit = int(request.GET.get("limit", 50))
         offset = int(request.GET.get("offset", 0))
         
-        result = db.query_raw(
-            'SELECT id, clientId, userId, functionName, input, output, success, usedAi, modelUsed, cost, durationMs, error, createdAt FROM OrchExecution ORDER BY createdAt DESC LIMIT ? OFFSET ?',
-            limit, offset
+        result = db.orchexecution.find_many(
+            order={"createdAt": "desc"},
+            take=limit,
+            skip=offset
         )
         
         executions_list = []
         for e in result:
-            if isinstance(e, dict):
-                executions_list.append({
-                    "id": e.get("id"),
-                    "clientId": e.get("clientId"),
-                    "functionName": e.get("functionName"),
-                    "input": json.loads(e.get("input")) if e.get("input") else None,
-                    "output": json.loads(e.get("output")) if e.get("output") else None,
-                    "success": bool(e.get("success")),
-                    "usedAi": bool(e.get("usedAi")),
-                    "modelUsed": e.get("modelUsed"),
-                    "cost": e.get("cost"),
-                    "durationMs": e.get("durationMs"),
-                    "error": e.get("error"),
-                    "createdAt": e.get("createdAt")
-                })
+            executions_list.append({
+                "id": e.id,
+                "clientId": e.clientId,
+                "functionName": e.functionName,
+                "input": json.loads(e.input) if getattr(e, "input", None) else None,
+                "output": json.loads(e.output) if getattr(e, "output", None) else None,
+                "success": bool(e.success),
+                "usedAi": bool(e.usedAi),
+                "modelUsed": e.modelUsed,
+                "cost": e.cost,
+                "durationMs": e.durationMs,
+                "error": e.error,
+                "createdAt": str(e.createdAt) if e.createdAt else None
+            })
         
         # Get total count
-        count_result = db.query_raw('SELECT COUNT(*) as total FROM OrchExecution')
-        total = count_result[0].get("total", 0) if count_result and isinstance(count_result[0], dict) else 0
+        total = db.orchexecution.count()
         
         return JsonResponse({
             "executions": executions_list,
@@ -370,10 +311,9 @@ def regenerate_client_token(request, client_id):
     try:
         new_token = f"orch-{secrets.token_urlsafe(32)}"
         
-        db.execute_raw(
-            "UPDATE OrchClient SET token = ? WHERE id = ?",
-            new_token,
-            client_id
+        db.orchclient.update(
+            where={"id": client_id},
+            data={"token": new_token}
         )
         
         return JsonResponse({

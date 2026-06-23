@@ -27,44 +27,39 @@ def user_functions(request):
     
     if request.method == "GET":
         try:
-            # Get all enabled OrchFunctions
-            all_functions = db.query_raw(
-                'SELECT name, displayName, description, pricePerUnit, unitSize, enrichPricePerUnit, requiresAi FROM OrchFunction WHERE enabled = 1 ORDER BY name ASC'
+            all_functions = db.orchfunction.find_many(
+                where={"enabled": True},
+                order={"name": "asc"}
             )
             
             # Get user's function configs
-            user_configs = db.query_raw(
-                'SELECT id, functionName, enabled, outputTemplate, config FROM UserFunction WHERE userId = ?',
-                user_id
+            user_configs = db.userfunction.find_many(
+                where={"userId": user_id}
             )
             
-            user_config_map = {}
-            for uc in user_configs:
-                if isinstance(uc, dict):
-                    user_config_map[uc.get("functionName")] = uc
+            user_config_map = {uc.functionName: uc for uc in user_configs}
             
             result = []
             for f in all_functions:
-                if isinstance(f, dict):
-                    user_config = user_config_map.get(f.get("name"), {})
-                    
-                    result.append({
-                        "name": f.get("name"),
-                        "displayName": f.get("displayName"),
-                        "description": f.get("description"),
-                        "cost": f.get("pricePerUnit", 0.0),
-                        "pricePerUnit": f.get("pricePerUnit", 0.0),
-                        "requiresAi": bool(f.get("requiresAi")),
-                        "enrichPricePerUnit": f.get("enrichPricePerUnit", 0.05) or 0.05,
-                        "unitSize": f.get("unitSize", 1000) or 1000,
-                        # User-specific config
-                        "userEnabled": bool(user_config.get("enabled", False)),
-                        "userConfig": {
-                            "id": user_config.get("id"),
-                            "outputTemplate": user_config.get("outputTemplate"),
-                            "config": json.loads(user_config.get("config")) if user_config.get("config") else None
-                        } if user_config else None
-                    })
+                user_config = user_config_map.get(f.name)
+                
+                result.append({
+                    "name": f.name,
+                    "displayName": f.displayName,
+                    "description": f.description,
+                    "cost": f.pricePerUnit or 0.0,
+                    "pricePerUnit": f.pricePerUnit or 0.0,
+                    "requiresAi": f.requiresAi,
+                    "enrichPricePerUnit": f.enrichPricePerUnit or 0.05,
+                    "unitSize": f.unitSize or 1000,
+                    # User-specific config
+                    "userEnabled": bool(user_config.enabled) if user_config else False,
+                    "userConfig": {
+                        "id": user_config.id,
+                        "outputTemplate": user_config.outputTemplate,
+                        "config": json.loads(user_config.config) if user_config.config else None
+                    } if user_config else None
+                })
             
 
             return JsonResponse({
@@ -88,49 +83,40 @@ def user_functions(request):
                 return JsonResponse({"error": "functionName is required"}, status=400)
             
             # Check if function exists and is enabled
-            func_check = db.query_raw(
-                'SELECT id FROM OrchFunction WHERE name = ? AND enabled = 1',
-                function_name
+            func_check = db.orchfunction.find_first(
+                where={"name": function_name, "enabled": True}
             )
-            if not func_check or len(func_check) == 0:
+            if not func_check:
                 return JsonResponse({"error": "Function not available"}, status=404)
             
             # Check if user already has this function
-            existing = db.query_raw(
-                'SELECT id FROM UserFunction WHERE userId = ? AND functionName = ?',
-                user_id, function_name
+            existing = db.userfunction.find_first(
+                where={"userId": user_id, "functionName": function_name}
             )
             
-            if existing and len(existing) > 0:
+            if existing:
                 # Update existing
-                db.execute_raw('''
-                    UPDATE UserFunction 
-                    SET enabled = 1, outputTemplate = ?, config = ?, updatedAt = ?
-                    WHERE userId = ? AND functionName = ?
-                ''',
-                    output_template,
-                    json.dumps(config) if config else None,
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    user_id,
-                    function_name
+                db.userfunction.update(
+                    where={"id": existing.id},
+                    data={
+                        "enabled": True,
+                        "outputTemplate": output_template,
+                        "config": json.dumps(config) if config else None
+                    }
                 )
                 return JsonResponse({"success": True, "message": "Function updated"})
             else:
                 # Create new
                 uf_id = str(uuid.uuid4())
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                db.execute_raw('''
-                    INSERT INTO UserFunction 
-                    (id, userId, functionName, enabled, outputTemplate, config, createdAt, updatedAt)
-                    VALUES (?, ?, ?, 1, ?, ?, ?, ?)
-                ''',
-                    uf_id,
-                    user_id,
-                    function_name,
-                    output_template,
-                    json.dumps(config) if config else None,
-                    now,
-                    now
+                db.userfunction.create(
+                    data={
+                        "id": uf_id,
+                        "userId": user_id,
+                        "functionName": function_name,
+                        "enabled": True,
+                        "outputTemplate": output_template,
+                        "config": json.dumps(config) if config else None
+                    }
                 )
                 return JsonResponse({"success": True, "id": uf_id}, status=201)
                 
@@ -145,25 +131,19 @@ def user_functions(request):
             if not function_name:
                 return JsonResponse({"error": "functionName is required"}, status=400)
             
-            updates = []
-            params = []
-            
+            updates = {}
             if "enabled" in body:
-                updates.append("enabled = ?")
-                params.append(1 if body["enabled"] else 0)
+                updates["enabled"] = bool(body["enabled"])
             if "outputTemplate" in body:
-                updates.append("outputTemplate = ?")
-                params.append(body["outputTemplate"])
+                updates["outputTemplate"] = body["outputTemplate"]
             if "config" in body:
-                updates.append("config = ?")
-                params.append(json.dumps(body["config"]) if body["config"] else None)
+                updates["config"] = json.dumps(body["config"]) if body["config"] else None
             
-            updates.append("updatedAt = ?")
-            params.append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            params.extend([user_id, function_name])
-            
-            query = f"UPDATE UserFunction SET {', '.join(updates)} WHERE userId = ? AND functionName = ?"
-            db.execute_raw(query, *params)
+            if updates:
+                # find existing first because we might not have the id directly (composite unique key userId_functionName)
+                existing = db.userfunction.find_first(where={"userId": user_id, "functionName": function_name})
+                if existing:
+                    db.userfunction.update(where={"id": existing.id}, data=updates)
             
             return JsonResponse({"success": True})
             
@@ -178,11 +158,9 @@ def user_functions(request):
             if not function_name:
                 return JsonResponse({"error": "functionName is required"}, status=400)
             
-            # Just disable, don't delete (preserve template)
-            db.execute_raw(
-                "UPDATE UserFunction SET enabled = 0, updatedAt = ? WHERE userId = ? AND functionName = ?",
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id, function_name
-            )
+            existing = db.userfunction.find_first(where={"userId": user_id, "functionName": function_name})
+            if existing:
+                db.userfunction.update(where={"id": existing.id}, data={"enabled": False})
             
             return JsonResponse({"success": True})
             
@@ -207,20 +185,19 @@ def user_function_keys(request, function_name):
     
     if request.method == "GET":
         try:
-            keys = db.query_raw(
-                'SELECT id, key, description, createdAt FROM UserFunctionKey WHERE userId = ? AND functionName = ? ORDER BY createdAt ASC',
-                user_id, function_name
+            keys = db.userfunctionkey.find_many(
+                where={"userId": user_id, "functionName": function_name},
+                order={"createdAt": "asc"}
             )
             
             result = []
             for k in keys:
-                if isinstance(k, dict):
-                    result.append({
-                        "id": k.get("id"),
-                        "key": k.get("key"),
-                        "description": k.get("description"),
-                        "createdAt": k.get("createdAt")
-                    })
+                result.append({
+                    "id": k.id,
+                    "key": k.key,
+                    "description": k.description,
+                    "createdAt": k.createdAt
+                })
             
             return JsonResponse({"keys": result, "count": len(result)})
             
@@ -239,25 +216,22 @@ def user_function_keys(request, function_name):
                 return JsonResponse({"error": "description is required"}, status=400)
             
             # Check if key already exists
-            existing = db.query_raw(
-                'SELECT id FROM UserFunctionKey WHERE userId = ? AND functionName = ? AND key = ?',
-                user_id, function_name, key
+            existing = db.userfunctionkey.find_first(
+                where={"userId": user_id, "functionName": function_name, "key": key}
             )
             
-            if existing and len(existing) > 0:
+            if existing:
                 return JsonResponse({"error": "Key already exists"}, status=409)
             
             key_id = str(uuid.uuid4())
-            db.execute_raw('''
-                INSERT INTO UserFunctionKey (id, userId, functionName, key, description, createdAt)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''',
-                key_id,
-                user_id,
-                function_name,
-                key,
-                description,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            db.userfunctionkey.create(
+                data={
+                    "id": key_id,
+                    "userId": user_id,
+                    "functionName": function_name,
+                    "key": key,
+                    "description": description
+                }
             )
             
             return JsonResponse({"success": True, "id": key_id}, status=201)
@@ -273,9 +247,8 @@ def user_function_keys(request, function_name):
             if not key_id:
                 return JsonResponse({"error": "keyId is required"}, status=400)
             
-            db.execute_raw(
-                'DELETE FROM UserFunctionKey WHERE id = ? AND userId = ?',
-                key_id, user_id
+            db.userfunctionkey.delete_many(
+                where={"id": key_id, "userId": user_id}
             )
             
             return JsonResponse({"success": True})

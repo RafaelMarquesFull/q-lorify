@@ -30,26 +30,23 @@ def authenticate_client(request):
     db = get_db()
     
     try:
-        result = db.query_raw(
-            'SELECT id, name, enabled FROM OrchClient WHERE token = ?',
-            token
+        client = db.orchclient.find_first(
+            where={"token": token}
         )
         
-        if not result or len(result) == 0:
+        if not client:
             return None, JsonResponse({
                 "success": False,
                 "error": "Invalid token"
             }, status=401)
         
-        client = result[0] if isinstance(result[0], dict) else {}
-        
-        if not client.get("enabled", False):
+        if not client.enabled:
             return None, JsonResponse({
                 "success": False,
                 "error": "Client is disabled"
             }, status=403)
         
-        return client.get("id"), None
+        return client.id, None
         
     except Exception as e:
         return None, JsonResponse({
@@ -238,21 +235,20 @@ def list_available_functions(request):
     
     try:
         # Get all enabled functions
-        functions = db.query_raw(
-            'SELECT name, displayName, description, cost, requiresAi, inputSchema FROM OrchFunction WHERE enabled = 1'
+        functions = db.orchfunction.find_many(
+            where={"enabled": True}
         )
         
         result = []
         for f in functions:
-            if isinstance(f, dict):
-                result.append({
-                    "name": f.get("name"),
-                    "displayName": f.get("displayName"),
-                    "description": f.get("description"),
-                    "cost": f.get("cost"),
-                    "requiresAi": bool(f.get("requiresAi")),
-                    "inputSchema": json.loads(f.get("inputSchema")) if f.get("inputSchema") else None
-                })
+            result.append({
+                "name": f.name,
+                "displayName": f.displayName,
+                "description": f.description,
+                "cost": f.pricePerUnit, # Assuming cost mapping based on schema or just returning pricePerUnit
+                "requiresAi": f.requiresAi,
+                "inputSchema": json.loads(f.inputSchema) if getattr(f, "inputSchema", None) else None
+            })
         
         return JsonResponse({
             "functions": result,

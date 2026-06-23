@@ -80,23 +80,20 @@ def log_execution(
         exec_id = str(uuid.uuid4())
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        db.execute_raw('''
-            INSERT INTO OrchExecution 
-            (id, clientId, functionName, input, output, success, usedAi, modelUsed, cost, durationMs, error, createdAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''',
-            exec_id,
-            client_id,
-            function_name,
-            json.dumps(input_data),
-            json.dumps(output_data) if output_data else None,
-            1 if success else 0,
-            1 if used_ai else 0,
-            model_used,
-            cost,
-            duration_ms,
-            error,
-            now
+        db.orchexecution.create(
+            data={
+                "id": exec_id,
+                "clientId": client_id,
+                "functionName": function_name,
+                "input": json.dumps(input_data),
+                "output": json.dumps(output_data) if output_data else None,
+                "success": success,
+                "usedAi": used_ai,
+                "modelUsed": model_used,
+                "cost": cost,
+                "durationMs": duration_ms,
+                "error": error
+            }
         )
     except Exception as e:
         print(f"Failed to log execution: {e}")
@@ -113,18 +110,16 @@ def check_rate_limit(client_id: str) -> Tuple[bool, Optional[str]]:
     
     try:
         # Get client rate limit and request count
-        result = db.query_raw(
-            'SELECT rateLimit, requestCount, lastRequestAt FROM OrchClient WHERE id = ?',
-            client_id
+        client = db.orchclient.find_first(
+            where={"id": client_id}
         )
         
-        if not result:
+        if not client:
             return False, "Client not found"
         
-        client = result[0] if isinstance(result[0], dict) else {}
-        rate_limit = client.get("rateLimit", 100)
-        request_count = client.get("requestCount", 0)
-        last_request = client.get("lastRequestAt")
+        rate_limit = client.rateLimit
+        request_count = client.requestCount
+        last_request = client.lastRequestAt
         
         # Reset count if more than 1 minute since last request
         from datetime import timedelta
@@ -132,8 +127,12 @@ def check_rate_limit(client_id: str) -> Tuple[bool, Optional[str]]:
         should_reset = False
         if last_request:
             try:
-                # Parse the datetime
-                last_dt = datetime.fromisoformat(last_request.replace('Z', '+00:00'))
+                # Parse the datetime (already a datetime object in Prisma ORM)
+                if isinstance(last_request, str):
+                    last_dt = datetime.fromisoformat(last_request.replace('Z', '+00:00'))
+                else:
+                    last_dt = last_request
+                    
                 if datetime.now(last_dt.tzinfo) - last_dt > timedelta(minutes=1):
                     should_reset = True
             except:
@@ -148,11 +147,12 @@ def check_rate_limit(client_id: str) -> Tuple[bool, Optional[str]]:
             return False, f"Rate limit exceeded ({rate_limit} requests/minute)"
         
         # Increment request count
-        db.execute_raw(
-            "UPDATE OrchClient SET requestCount = ?, lastRequestAt = ? WHERE id = ?",
-            request_count + 1,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            client_id
+        db.orchclient.update(
+            where={"id": client_id},
+            data={
+                "requestCount": request_count + 1,
+                "lastRequestAt": datetime.utcnow()
+            }
         )
         
         return True, None

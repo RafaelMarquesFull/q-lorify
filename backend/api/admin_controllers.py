@@ -136,46 +136,37 @@ def models(request):
     db = get_db()
     
     if request.method == "GET":
-        # Fetch models with new fields via raw SQL (Prisma client doesn't know about new fields)
         try:
-            raw_models = db.query_raw('''
-                SELECT m.id, m.name, m.providerModelId, m.providerId, 
-                       m.costPerInputToken, m.costPerOutputToken,
-                       m.fallback1Id, m.fallback2Id, m.fallback3Id,
-                       m.isOrchestrator, m.isSentiment, m.description, m.rpm, m.integrationGuide, m.isPublic,
-                       p.name as providerName
-                FROM AIModel m
-                JOIN AIProvider p ON m.providerId = p.id
-                ORDER BY m.name
-            ''')
+            raw_models = db.aimodel.find_many(
+                include={"provider": True},
+                order={"name": "asc"}
+            )
             
-            # Get all models for fallback name lookup
-            all_models = {m.get("id"): m.get("name") for m in raw_models} if raw_models else {}
+            all_models = {m.id: m.name for m in raw_models}
             
             data = []
             for m in raw_models:
-                if isinstance(m, dict):
-                    data.append({
-                        "id": m.get("id"),
-                        "name": m.get("name"),
-                        "providerModelId": m.get("providerModelId") or m.get("name"),
-                        "providerId": m.get("providerId"),
-                        "provider": m.get("providerName"),
-                        "costIn": m.get("costPerInputToken", 0),
-                        "costOut": m.get("costPerOutputToken", 0),
-                        "isOrchestrator": bool(m.get("isOrchestrator", 0)),
-                        "isSentiment": bool(m.get("isSentiment", 0)),
-                        "description": m.get("description"),
-                        "rpm": m.get("rpm", 60),
-                        "integrationGuide": m.get("integrationGuide"),
-                        "isPublic": bool(m.get("isPublic", 1)),
-                        "fallback1Id": m.get("fallback1Id"),
-                        "fallback2Id": m.get("fallback2Id"),
-                        "fallback3Id": m.get("fallback3Id"),
-                        "fallback1Name": all_models.get(m.get("fallback1Id")),
-                        "fallback2Name": all_models.get(m.get("fallback2Id")),
-                        "fallback3Name": all_models.get(m.get("fallback3Id"))
-                    })
+                data.append({
+                    "id": m.id,
+                    "name": m.name,
+                    "providerModelId": m.providerModelId or m.name,
+                    "providerId": m.providerId,
+                    "provider": m.provider.name if m.provider else "",
+                    "costIn": m.costPerInputToken,
+                    "costOut": m.costPerOutputToken,
+                    "isOrchestrator": m.isOrchestrator,
+                    "isSentiment": m.isSentiment,
+                    "description": m.description,
+                    "rpm": m.rpm,
+                    "integrationGuide": m.integrationGuide,
+                    "isPublic": m.isPublic,
+                    "fallback1Id": m.fallback1Id,
+                    "fallback2Id": m.fallback2Id,
+                    "fallback3Id": m.fallback3Id,
+                    "fallback1Name": all_models.get(m.fallback1Id),
+                    "fallback2Name": all_models.get(m.fallback2Id),
+                    "fallback3Name": all_models.get(m.fallback3Id)
+                })
             return JsonResponse(data, safe=False)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
@@ -186,27 +177,23 @@ def models(request):
             import uuid
             model_id = str(uuid.uuid4())
             
-            db.execute_raw('''
-                INSERT INTO AIModel (id, name, providerModelId, providerId, costPerInputToken, costPerOutputToken, 
-                                    fallback1Id, fallback2Id, fallback3Id, isOrchestrator, isSentiment, description, rpm, integrationGuide, isPublic)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''',
-                model_id,
-                body["name"],
-                body.get("providerModelId") or body["name"],
-                body["providerId"],
-                body.get("costIn", 0.0),
-                body.get("costOut", 0.0),
-                body.get("fallback1Id"),
-                body.get("fallback2Id"),
-                body.get("fallback3Id"),
-                1 if body.get("isOrchestrator") else 0,
-                1 if body.get("isSentiment") else 0,
-                body.get("description"),
-                body.get("rpm", 60),
-                body.get("integrationGuide"),
-                1 if body.get("isPublic", True) else 0
-            )
+            db.aimodel.create(data={
+                "id": model_id,
+                "name": body["name"],
+                "providerModelId": body.get("providerModelId") or body["name"],
+                "providerId": body["providerId"],
+                "costPerInputToken": float(body.get("costIn", 0.0)),
+                "costPerOutputToken": float(body.get("costOut", 0.0)),
+                "fallback1Id": body.get("fallback1Id"),
+                "fallback2Id": body.get("fallback2Id"),
+                "fallback3Id": body.get("fallback3Id"),
+                "isOrchestrator": bool(body.get("isOrchestrator")),
+                "isSentiment": bool(body.get("isSentiment")),
+                "description": body.get("description"),
+                "rpm": int(body.get("rpm", 60)),
+                "integrationGuide": body.get("integrationGuide"),
+                "isPublic": bool(body.get("isPublic", True))
+            })
             return JsonResponse({"id": model_id}, status=201)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
@@ -219,57 +206,24 @@ def models(request):
             if not model_id:
                 return JsonResponse({"error": "id is required"}, status=400)
             
-            # Build dynamic UPDATE query
-            updates = []
-            params = []
+            update_data = {}
+            if "name" in body: update_data["name"] = body["name"]
+            if "providerModelId" in body: update_data["providerModelId"] = body["providerModelId"]
+            if "providerId" in body: update_data["providerId"] = body["providerId"]
+            if "costIn" in body: update_data["costPerInputToken"] = float(body["costIn"])
+            if "costOut" in body: update_data["costPerOutputToken"] = float(body["costOut"])
+            if "fallback1Id" in body: update_data["fallback1Id"] = body["fallback1Id"] or None
+            if "fallback2Id" in body: update_data["fallback2Id"] = body["fallback2Id"] or None
+            if "fallback3Id" in body: update_data["fallback3Id"] = body["fallback3Id"] or None
+            if "isOrchestrator" in body: update_data["isOrchestrator"] = bool(body["isOrchestrator"])
+            if "description" in body: update_data["description"] = body["description"]
+            if "rpm" in body: update_data["rpm"] = int(body["rpm"])
+            if "integrationGuide" in body: update_data["integrationGuide"] = body["integrationGuide"]
+            if "isPublic" in body: update_data["isPublic"] = bool(body["isPublic"])
+            if "isSentiment" in body: update_data["isSentiment"] = bool(body["isSentiment"])
             
-            if "name" in body:
-                updates.append("name = ?")
-                params.append(body["name"])
-            if "providerModelId" in body:
-                updates.append("providerModelId = ?")
-                params.append(body["providerModelId"])
-            if "providerId" in body:
-                updates.append("providerId = ?")
-                params.append(body["providerId"])
-            if "costIn" in body:
-                updates.append("costPerInputToken = ?")
-                params.append(body["costIn"])
-            if "costOut" in body:
-                updates.append("costPerOutputToken = ?")
-                params.append(body["costOut"])
-            if "fallback1Id" in body:
-                updates.append("fallback1Id = ?")
-                params.append(body["fallback1Id"] or None)
-            if "fallback2Id" in body:
-                updates.append("fallback2Id = ?")
-                params.append(body["fallback2Id"] or None)
-            if "fallback3Id" in body:
-                updates.append("fallback3Id = ?")
-                params.append(body["fallback3Id"] or None)
-            if "isOrchestrator" in body:
-                updates.append("isOrchestrator = ?")
-                params.append(1 if body["isOrchestrator"] else 0)
-            if "description" in body:
-                updates.append("description = ?")
-                params.append(body["description"])
-            if "rpm" in body:
-                updates.append("rpm = ?")
-                params.append(body["rpm"])
-            if "integrationGuide" in body:
-                updates.append("integrationGuide = ?")
-                params.append(body["integrationGuide"])
-            if "isPublic" in body:
-                updates.append("isPublic = ?")
-                params.append(1 if body["isPublic"] else 0)
-            if "isSentiment" in body:
-                updates.append("isSentiment = ?")
-                params.append(1 if body["isSentiment"] else 0)
-            
-            if updates:
-                params.append(model_id)
-                query = f"UPDATE AIModel SET {', '.join(updates)} WHERE id = ?"
-                db.execute_raw(query, *params)
+            if update_data:
+                db.aimodel.update(where={"id": model_id}, data=update_data)
             
             return JsonResponse({"success": True})
         except Exception as e:
@@ -283,7 +237,7 @@ def models(request):
             if not model_id:
                 return JsonResponse({"error": "id is required"}, status=400)
             
-            db.execute_raw('DELETE FROM AIModel WHERE id = ?', model_id)
+            db.aimodel.delete(where={"id": model_id})
             return JsonResponse({"success": True})
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
@@ -571,15 +525,11 @@ def sync_provider_models(request, provider_id):
         except Exception as e:
             return JsonResponse({"error": f"Failed to fetch from provider: {str(e)}"}, status=502)
         
-        # Get already imported models for this provider
-        existing_models = db.query_raw(
-            'SELECT providerModelId FROM AIModel WHERE providerId = ?',
-            provider_id
-        )
+        existing_models = db.aimodel.find_many(where={"providerId": provider_id})
         existing_ids = set()
         for m in existing_models:
-            if isinstance(m, dict) and m.get("providerModelId"):
-                existing_ids.add(m["providerModelId"])
+            if m.providerModelId:
+                existing_ids.add(m.providerModelId)
         
         # Parse and filter models
         available_models = []
