@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Server, Trash2, Key, ChevronDown, ChevronUp, RefreshCw, ToggleLeft, Download, Check, Loader2 } from "lucide-react"
+import { Plus, Server, Trash2, Key, ChevronDown, ChevronUp, RefreshCw, ToggleLeft, Download, Check, Loader2, Edit } from "lucide-react"
 import api from "@/lib/api"
 import { toast } from "sonner"
 
@@ -44,6 +44,13 @@ export default function ProvidersPage() {
     const [type, setType] = useState("openai")
     const [baseUrl, setBaseUrl] = useState("")
     const [apiKey, setApiKey] = useState("")
+
+    // Form State - Edit Provider
+    const [editOpen, setEditOpen] = useState(false)
+    const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
+    const [editName, setEditName] = useState("")
+    const [editBaseUrl, setEditBaseUrl] = useState("")
+    const [editApiKey, setEditApiKey] = useState("")
 
     // Add Key Dialog
     const [addKeyOpen, setAddKeyOpen] = useState(false)
@@ -98,6 +105,45 @@ export default function ProvidersPage() {
             toast.error(error.response?.data?.error || "Falha ao criar provedor")
         } finally {
             setLoading(false)
+        }
+    }
+
+    function openEditDialog(provider: Provider) {
+        setEditingProviderId(provider.id)
+        setEditName(provider.name)
+        setEditBaseUrl(provider.baseUrl || "")
+        setEditApiKey("")
+        setEditOpen(true)
+    }
+
+    async function handleEditSubmit() {
+        if (!editName || !editingProviderId) return
+
+        setLoading(true)
+        try {
+            const payload: any = { id: editingProviderId, name: editName, baseUrl: editBaseUrl }
+            if (editApiKey) payload.apiKey = editApiKey
+            
+            await api.patch("/admin/providers", payload)
+            toast.success("Provedor atualizado")
+            setEditOpen(false)
+            fetchProviders()
+        } catch (error: any) {
+            toast.error(error.response?.data?.error || "Falha ao atualizar provedor")
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    async function deleteProvider(providerId: string) {
+        if (!confirm("Tem certeza que deseja excluir este provedor? Isso apagará também todos os modelos vinculados a ele.")) return
+        
+        try {
+            await api.delete("/admin/providers", { data: { id: providerId } })
+            toast.success("Provedor excluído")
+            fetchProviders()
+        } catch (error: any) {
+            toast.error(error.response?.data?.error || "Falha ao excluir provedor")
         }
     }
 
@@ -299,6 +345,24 @@ export default function ProvidersPage() {
                                     >
                                         <Download className="h-4 w-4 mr-1" /> Sincronizar Modelos
                                     </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => openEditDialog(provider)}
+                                        className="border-white/10 text-white/70 hover:text-white"
+                                        title="Editar Provedor"
+                                    >
+                                        <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => deleteProvider(provider.id)}
+                                        className="border-white/10 text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                                        title="Excluir Provedor"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
                                     <div className="flex items-center gap-2">
                                         <RefreshCw className={`h-4 w-4 ${provider.rotationEnabled ? "text-emerald-400" : "text-white/30"}`} />
                                         <span className="text-sm text-white/60">Rotação</span>
@@ -434,6 +498,33 @@ export default function ProvidersPage() {
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setAddKeyOpen(false)} className="border-white/10">Cancelar</Button>
                         <Button onClick={addKey} className="bg-white text-black hover:bg-white/90">Adicionar</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Provider Dialog */}
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent className="bg-zinc-950 border-white/10 text-white sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Editar Provedor de IA</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="edit-name" className="text-right">Nome</Label>
+                            <Input id="edit-name" value={editName} onChange={e => setEditName(e.target.value)} className="col-span-3 bg-white/5 border-white/10 text-white" />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="edit-baseurl" className="text-right">Base URL</Label>
+                            <Input id="edit-baseurl" placeholder="Opcional" value={editBaseUrl} onChange={e => setEditBaseUrl(e.target.value)} className="col-span-3 bg-white/5 border-white/10 text-white" />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="edit-apikey" className="text-right">API Key</Label>
+                            <Input id="edit-apikey" type="password" placeholder="Preencha apenas para alterar" value={editApiKey} onChange={e => setEditApiKey(e.target.value)} className="col-span-3 bg-white/5 border-white/10 text-white" />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditOpen(false)} className="border-white/10">Cancelar</Button>
+                        <Button onClick={handleEditSubmit} disabled={loading} className="bg-white text-black hover:bg-white/90">Salvar</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

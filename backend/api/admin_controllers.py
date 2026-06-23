@@ -94,6 +94,39 @@ def providers(request):
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
     
+    if request.method == "DELETE":
+        try:
+            body = json.loads(request.body)
+            provider_id = body.get("id")
+            
+            if not provider_id:
+                return JsonResponse({"error": "id is required"}, status=400)
+            
+            # Find models to handle relationships
+            models = db.aimodel.find_many(where={"providerId": provider_id})
+            model_ids = [m.id for m in models]
+            
+            if model_ids:
+                # Check if any Agent is using these models
+                agents_using = db.agent.find_first(where={"modelId": {"in": model_ids}})
+                if agents_using:
+                    return JsonResponse({"error": "Não é possível excluir este provedor pois há Agentes de IA configurados para utilizar seus modelos."}, status=400)
+                
+                # Unlink models from metrics (since modelId is optional in Metric)
+                db.metric.update_many(
+                    where={"modelId": {"in": model_ids}},
+                    data={"modelId": None}
+                )
+            
+            # Cascade delete: manually delete keys and models
+            db.providerapikey.delete_many(where={"providerId": provider_id})
+            db.aimodel.delete_many(where={"providerId": provider_id})
+            db.aiprovider.delete(where={"id": provider_id})
+            
+            return JsonResponse({"success": True})
+        except Exception as e:
+            return JsonResponse({"error": f"Erro de banco de dados: {str(e)}"}, status=400)
+
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 @csrf_exempt
@@ -499,8 +532,16 @@ def sync_provider_models(request, provider_id):
         if not provider:
             return JsonResponse({"error": "Provider not found"}, status=404)
         
-        if not provider.baseUrl:
-            return JsonResponse({"error": "Provider has no baseUrl configured"}, status=400)
+        base_url = provider.baseUrl
+        if not base_url:
+            if provider.type == "openai":
+                base_url = "https://api.openai.com/v1"
+            elif provider.type == "groq":
+                base_url = "https://api.groq.com/openai/v1"
+            else:
+                return JsonResponse({"error": "Provider has no baseUrl configured and no default exists for this type"}, status=400)
+        
+        base_url = base_url.rstrip('/')
         
         # Get API key for this provider (use rotation or single key)
         from .key_rotation import get_next_api_key
@@ -516,7 +557,7 @@ def sync_provider_models(request, provider_id):
         }
         
         try:
-            resp = requests.get(f"{provider.baseUrl}/models", headers=headers, timeout=30)
+            resp = requests.get(f"{base_url}/models", headers=headers, timeout=30)
             
             if resp.status_code != 200:
                 return JsonResponse({
@@ -542,7 +583,7 @@ def sync_provider_models(request, provider_id):
         
         # Parse and filter models
         available_models = []
-        raw_models = data.get("data", [])
+        raw_models = data.get("data", data.get("models", []))
         
         for model in raw_models:
             model_id = model.get("id")

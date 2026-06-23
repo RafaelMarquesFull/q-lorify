@@ -10,7 +10,7 @@ interface SEOProps {
 }
 
 export function SEO({
-  title = "Q-Lorify | Infraestrutura Otimizada para Agentes de IA",
+  title = "Q-Lorify | Infraestrutura Otimizada para Agentes e modelos especializados de IA",
   description = "Orquestre fluxos de trabalho de IA poderosos com latência imbatível. Gerencie modelos, monitore o uso e monetize seus agentes de inteligência artificial.",
   keywords = "agentes de IA, infraestrutura LLM, hospedagem de modelos, IA generativa, orquestração de IA, Q-Lorify, Qlorify",
   url = "https://qlorify.com",
