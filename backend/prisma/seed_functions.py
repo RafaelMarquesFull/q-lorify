@@ -4,12 +4,9 @@ Seed script for OrchFunction using SQLite directly.
 Populates OrchFunction with default built-in functions.
 """
 
-import sqlite3
 import uuid
 from datetime import datetime
-import os
-
-DB_PATH = os.path.join(os.path.dirname(__file__), 'dev.db')
+from prisma import Prisma
 
 # Built-in function definitions to seed
 BUILTIN_FUNCTIONS = [
@@ -84,66 +81,49 @@ def seed_functions():
     """Seed built-in functions into database."""
     print("🌱 Starting functions seeding...")
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    db = Prisma()
+    db.connect()
     
     created = 0
     skipped = 0
     
     try:
         for func in BUILTIN_FUNCTIONS:
-            # Check if function already exists
-            cursor.execute(
-                "SELECT id FROM OrchFunction WHERE name = ?",
-                (func["name"],)
-            )
-            existing = cursor.fetchone()
+            existing = db.orchfunction.find_unique(where={"name": func["name"]})
             
             if existing:
                 print(f"  ⏭️  {func['displayName']} already exists, skipping")
                 skipped += 1
             else:
-                # Insert new function
-                now = datetime.now().isoformat()
-                cursor.execute('''
-                    INSERT INTO OrchFunction 
-                    (id, name, displayName, description, enabled, pricePerUnit, 
-                     unitSize, requiresAi, timeout, createdAt, updatedAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    str(uuid.uuid4()),
-                    func["name"],
-                    func["displayName"],
-                    func["description"],
-                    1,  # enabled
-                    func["pricePerUnit"],
-                    func["unitSize"],
-                    1 if func["requiresAi"] else 0,
-                    30000,  # timeout
-                    now,
-                    now
-                ))
+                db.orchfunction.create(
+                    data={
+                        "name": func["name"],
+                        "displayName": func["displayName"],
+                        "description": func["description"],
+                        "enabled": True,
+                        "pricePerUnit": func["pricePerUnit"],
+                        "unitSize": func["unitSize"],
+                        "requiresAi": func["requiresAi"],
+                        "timeout": 30000
+                    }
+                )
                 print(f"  ✅ Created {func['displayName']}")
                 created += 1
         
-        conn.commit()
         print(f"\n✨ Functions seeding complete!")
         print(f"   Created: {created}, Skipped: {skipped}")
         
-        # Show summary
-        cursor.execute("SELECT name, displayName, enabled FROM OrchFunction ORDER BY name")
-        all_functions = cursor.fetchall()
+        all_functions = db.orchfunction.find_many(order={"name": "asc"})
         print(f"\n📊 Total functions in database: {len(all_functions)}")
-        for name, display_name, enabled in all_functions:
-            status = "✅" if enabled else "❌"
-            print(f"  {status} {display_name} ({name})")
+        for f in all_functions:
+            status = "✅" if f.enabled else "❌"
+            print(f"  {status} {f.displayName} ({f.name})")
         
     except Exception as e:
         print(f"\n❌ Error during seeding: {e}")
-        conn.rollback()
         raise
     finally:
-        conn.close()
+        db.disconnect()
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 
 import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { PiggyBank } from "lucide-react"
+import { Card } from "@/components/ui/card"
 import api from "@/lib/api"
 import { Loader2 } from "lucide-react"
 

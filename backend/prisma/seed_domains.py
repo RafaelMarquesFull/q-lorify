@@ -4,13 +4,10 @@ Seed script for domain templates using SQLite directly.
 Populates DomainConfig with default domain templates.
 """
 
-import sqlite3
 import json
 import uuid
 from datetime import datetime
-import os
-
-DB_PATH = os.path.join(os.path.dirname(__file__), 'dev.db')
+from prisma import Prisma
 
 DOMAIN_TEMPLATES = [
     {
@@ -138,62 +135,43 @@ def seed_domains():
     """Seed domain templates into database."""
     print("🌱 Starting domain seeding...")
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    db = Prisma()
+    db.connect()
     
     try:
         for template in DOMAIN_TEMPLATES:
-            # Check if domain already exists
-            cursor.execute(
-                "SELECT id FROM DomainConfig WHERE domain = ?",
-                (template["domain"],)
-            )
-            existing = cursor.fetchone()
+            existing = db.domainconfig.find_unique(where={"domain": template["domain"]})
             
             if existing:
                 print(f"  ⏭️  {template['name']} already exists, skipping")
             else:
-                # Insert new domain
-                now = datetime.now().isoformat()
-                cursor.execute('''
-                    INSERT INTO DomainConfig 
-                    (id, domain, name, description, icon, defaultCategories, 
-                     systemPrompt, matchingRules, isActive, isDefault, 
-                     createdAt, updatedAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    str(uuid.uuid4()),
-                    template["domain"],
-                    template["name"],
-                    template.get("description"),
-                    template.get("icon"),
-                    template["defaultCategories"],
-                    template["systemPrompt"],
-                    None,  # matchingRules
-                    1,     # isActive
-                    template["isDefault"],
-                    now,
-                    now
-                ))
+                db.domainconfig.create(
+                    data={
+                        "domain": template["domain"],
+                        "name": template["name"],
+                        "description": template.get("description"),
+                        "icon": template.get("icon"),
+                        "defaultCategories": template["defaultCategories"],
+                        "systemPrompt": template["systemPrompt"],
+                        "isActive": True,
+                        "isDefault": bool(template["isDefault"])
+                    }
+                )
                 print(f"  ✅ Created {template['name']}")
         
-        conn.commit()
         print("\n✨ Domain seeding complete!")
         
-        # Show summary
-        cursor.execute("SELECT name, icon, isDefault FROM DomainConfig")
-        all_domains = cursor.fetchall()
+        all_domains = db.domainconfig.find_many()
         print(f"\n📊 Total domains in database: {len(all_domains)}")
-        for name, icon, is_default in all_domains:
-            default_marker = " (default)" if is_default else ""
-            print(f"  {icon} {name}{default_marker}")
+        for d in all_domains:
+            default_marker = " (default)" if d.isDefault else ""
+            print(f"  {d.icon} {d.name}{default_marker}")
         
     except Exception as e:
         print(f"\n❌ Error during seeding: {e}")
-        conn.rollback()
         raise
     finally:
-        conn.close()
+        db.disconnect()
 
 if __name__ == "__main__":
     seed_domains()
