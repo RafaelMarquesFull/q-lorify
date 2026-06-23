@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom
 import { Toaster } from "@/components/ui/sonner"
 import { useAuthStore } from "@/store/auth"
 import { GoogleOAuthProvider } from "@react-oauth/google"
+import { HelmetProvider } from "react-helmet-async"
 
 // Layouts loaded eagerly (always needed)
 import DashboardLayout from "@/layouts/DashboardLayout"
@@ -67,60 +68,63 @@ function App() {
   const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ""
 
   return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <BrowserRouter>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/verify-email" element={<VerifyEmailPage />} />
+    <HelmetProvider>
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <BrowserRouter>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
 
-            <Route path="/dashboard" element={
-              <ProtectedRoute>
-                <DashboardLayout>
-                  <Suspense fallback={<PageLoader />}>
-                    <Outlet />
-                  </Suspense>
-                </DashboardLayout>
-              </ProtectedRoute>
-            }>
-              <Route index element={<DashboardOverview />} />
-              <Route path="playground" element={<Playground />} />
-              <Route path="analytics" element={<AnalyticsPage />} />
-              <Route path="functions" element={<UserFunctionsPage />} />
-              <Route path="keys" element={<ApiKeysPage />} />
-              <Route path="billing" element={<BillingPage />} />
-              <Route path="models" element={<ClientModelsPage />} />
-              <Route path="settings" element={<SettingsPage />} />
-            </Route>
+              <Route path="/dashboard" element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <Suspense fallback={<PageLoader />}>
+                      <Outlet />
+                    </Suspense>
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }>
+                <Route index element={<DashboardOverview />} />
+                <Route path="playground" element={<Playground />} />
+                <Route path="analytics" element={<AnalyticsPage />} />
+                <Route path="functions" element={<UserFunctionsPage />} />
+                <Route path="keys" element={<ApiKeysPage />} />
+                <Route path="billing" element={<BillingPage />} />
+                <Route path="models" element={<ClientModelsPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+              </Route>
 
-            <Route path="/admin" element={
-              <AdminRoute>
-                <AdminLayout>
-                  <Suspense fallback={<PageLoader />}>
-                    <Outlet />
-                  </Suspense>
-                </AdminLayout>
-              </AdminRoute>
-            }>
-              <Route index element={<AdminOverview />} />
-              <Route path="providers" element={<ProvidersPage />} />
-              <Route path="models" element={<ModelsPage />} />
-              <Route path="users" element={<UsersPage />} />
-              <Route path="orchestrator/functions" element={<OrchestratorFunctionsPage />} />
-              <Route path="orchestrator/clients" element={<OrchestratorClientsPage />} />
-              <Route path="sentiment" element={<AdminSentimentPage />} />
-              <Route path="settings" element={<div className="p-8 text-white"><h1>Settings (WIP)</h1></div>} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
-      <Toaster />
-    </GoogleOAuthProvider>
+              <Route path="/admin" element={
+                <AdminRoute>
+                  <AdminLayout>
+                    <Suspense fallback={<PageLoader />}>
+                      <Outlet />
+                    </Suspense>
+                  </AdminLayout>
+                </AdminRoute>
+              }>
+                <Route index element={<AdminOverview />} />
+                <Route path="providers" element={<ProvidersPage />} />
+                <Route path="models" element={<ModelsPage />} />
+                <Route path="users" element={<UsersPage />} />
+                <Route path="orchestrator/functions" element={<OrchestratorFunctionsPage />} />
+                <Route path="orchestrator/clients" element={<OrchestratorClientsPage />} />
+                <Route path="sentiment" element={<AdminSentimentPage />} />
+                <Route path="settings" element={<div className="p-8 text-white"><h1>Settings (WIP)</h1></div>} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+        <Toaster />
+      </GoogleOAuthProvider>
+    </HelmetProvider>
   )
 }
 
 export default App
+

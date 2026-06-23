@@ -8,6 +8,32 @@ import Logotipo from "@/assets/logotipo.png"
 import HeroBg from "@/assets/hero-bg.png"
 import api from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+import { SEO } from "@/components/SEO"
+import { Helmet } from "react-helmet-async"
+import { generateOrganizationSchema, generateSoftwareSchema, generateFAQSchema } from "@/lib/schema-markup"
+
+const faqs = [
+    {
+        question: "Como criar agentes de IA autônomos com a Q-Lorify?",
+        answer: "A Q-Lorify fornece uma infraestrutura que conecta eficientemente nossos modelos especializados para orquestração de agentes. Basta se cadastrar, gerar uma API Key e conectar seus prompts a modelos especializados em segundos que aprendem conforme você usa."
+    },
+    {
+        question: "Qual a latência média da hospedagem de modelos LLM?",
+        answer: "Nossa arquitetura otimizada garante uma latência média inferior a 50ms para as conexões, ideal para aplicações de missão crítica e chatbots em tempo real."
+    },
+    {
+        question: "Quais modelos a Q-Lorify suporta?",
+        answer: "A Q-Lorify possui seus proprios modelos de pre treinados com adaptadores QLoRa para propositos especificos tornando modelos especialista em determinados nichos e tipos de tarefas. Você pode usar nossos modelos e adaptadores atraves de parâmetro na API."
+    },
+    {
+        question: "Quais as vantagens de usar Q-lorify?",
+        answer: "Você tem diversas vantagens como usar modelos especializados que aprendem e se adaptam a medida que você utiliza reduzindo o custos, além de ter custos abaixo do mercado para modelos do mesmo porte e que entregam desempenho superior."
+    },
+    {
+        question: "Como é o serviço de treinamento de modelos ?",
+        answer: "Em breve vamos liberar acesso a um modelo LLM base em que voce poderá treinar ativamente adaptadores QLoRa e conecta-los diretamente com custo acessível para tornar modelos especialistas no seu nicho de mercado "
+    }
+];
 
 interface Model {
     id: string
@@ -36,6 +62,13 @@ export default function LandingPage() {
 
     return (
         <AnimatedGradientBg variant="intense" className="min-h-screen text-foreground selection:bg-primary/20 overflow-x-hidden font-sans">
+            <SEO />
+            <Helmet>
+                <script type="application/ld+json">{JSON.stringify(generateOrganizationSchema())}</script>
+                <script type="application/ld+json">{JSON.stringify(generateSoftwareSchema())}</script>
+                <script type="application/ld+json">{JSON.stringify(generateFAQSchema(faqs))}</script>
+            </Helmet>
+
             {/* Navbar */}
             <nav className="fixed w-full z-50 glass-ultra border-b border-white/5 backdrop-blur-md">
                 <div className="container mx-auto px-6 h-20 flex items-center justify-between">
@@ -68,6 +101,7 @@ export default function LandingPage() {
                     <img
                         src={HeroBg}
                         alt="Background AI Network"
+                        fetchPriority="high"
                         className="w-full h-full object-cover opacity-40 mix-blend-screen scale-105 animate-pulse-slow"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-transparent" />
@@ -86,7 +120,7 @@ export default function LandingPage() {
 
                     <p className="text-xl md:text-2xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed animate-slide-up delay-100 drop-shadow-md">
                         Orquestre fluxos de trabalho de IA poderosos com latência imbatível.
-                        Gerencie modelos, monitore o uso e monetize seus agentes em uma plataforma unificada e robusta.
+                        Gerencie e treine modelos de IA de forma pratica e acessível, monitore o uso e monetize seus agentes em uma plataforma unificada e robusta.
                     </p>
 
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up delay-200">
@@ -246,6 +280,30 @@ export default function LandingPage() {
                             )}
                         </div>
                     )}
+                </div>
+            </section>
+
+            {/* FAQ Section - Long Tail SEO */}
+            <section className="py-24 relative bg-black/30 border-t border-white/5">
+                <div className="container mx-auto px-6 max-w-4xl">
+                    <div className="text-center mb-16">
+                        <Badge variant="outline" className="mb-4 border-primary/30 text-primary">Dúvidas Frequentes</Badge>
+                        <h2 className="text-3xl md:text-5xl font-bold mb-6 text-white">
+                            Perguntas Comuns sobre IA e Orquestração
+                        </h2>
+                    </div>
+                    <div className="space-y-6">
+                        {faqs.map((faq, idx) => (
+                            <BentoCard key={idx} size="1x1" className="p-6 bg-white/5 border-white/10 hover:border-primary/30 transition-colors">
+                                <h3 className="text-xl font-bold text-white mb-3 flex items-center justify-between">
+                                    {faq.question}
+                                </h3>
+                                <p className="text-muted-foreground leading-relaxed">
+                                    {faq.answer}
+                                </p>
+                            </BentoCard>
+                        ))}
+                    </div>
                 </div>
             </section>
 
