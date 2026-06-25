@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Bot, Cpu, Zap, Shield, Sparkles, Globe } from "lucide-react"
+import { ArrowRight, Bot, Cpu, Zap, Shield, Sparkles, Globe, Workflow } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { AnimatedGradientBg } from "@/components/animated-gradient-bg"
 import { BentoCard } from "@/components/bento-card"
@@ -8,6 +8,7 @@ import Logotipo from "@/assets/logotipo.png"
 import HeroBg from "@/assets/hero-bg.png"
 import iconeOrquestrador from "@/assets/icone-orquestrador.png"
 import iconeSentiment from "@/assets/icone-sentiment.png"
+import ExemploN8n from "@/assets/exemple_n8n.png"
 import api from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { SEO } from "@/components/SEO"
@@ -85,7 +86,7 @@ export default function LandingPage() {
                     <div className="hidden md:flex items-center space-x-8">
                         <a href="#features" className="text-sm font-medium text-muted-foreground hover:text-white transition-colors">Recursos</a>
                         <a href="#models" className="text-sm font-medium text-muted-foreground hover:text-white transition-colors">Modelos</a>
-                        <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-white transition-colors">Preços</a>
+                        {/* <a href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-white transition-colors">Preços</a> */}
                     </div>
                     <div className="flex items-center space-x-4">
                         <Button variant="ghost" onClick={() => navigate("/login")} className="hover:bg-white/5 text-muted-foreground hover:text-white">
@@ -131,7 +132,7 @@ export default function LandingPage() {
                         <Button size="lg" variant="glow" onClick={() => navigate("/register")} className="h-16 px-10 text-lg rounded-2xl w-full sm:w-auto shadow-xl shadow-primary/25 hover:scale-105 transition-transform">
                             Criar Conta Grátis <ArrowRight className="ml-2 h-5 w-5" />
                         </Button>
-                        <Button size="lg" variant="glass" className="h-16 px-10 text-lg rounded-2xl w-full sm:w-auto hover:bg-white/10 hover:border-white/20 transition-all border border-white/10">
+                        <Button size="lg" variant="glass" onClick={() => navigate("/docs")} className="h-16 px-10 text-lg rounded-2xl w-full sm:w-auto hover:bg-white/10 hover:border-white/20 transition-all border border-white/10">
                             Ver Documentação
                         </Button>
                     </div>
@@ -170,7 +171,7 @@ export default function LandingPage() {
                         </p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                         <BentoCard size="1x1" className="group" glassmorphism>
                             <div className="p-8 h-full flex flex-col relative overflow-hidden">
                                 <div className="absolute top-0 right-0 p-32 bg-blue-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
@@ -209,6 +210,73 @@ export default function LandingPage() {
                                 </p>
                             </div>
                         </BentoCard>
+
+                        <BentoCard size="1x1" className="group" glassmorphism>
+                            <div className="p-8 h-full flex flex-col relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-32 bg-pink-500/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
+                                <div className="mb-8 p-4 rounded-2xl bg-pink-500/10 w-fit ring-1 ring-pink-500/20 group-hover:scale-110 transition-transform duration-500">
+                                    <Workflow className="h-8 w-8 text-pink-400" />
+                                </div>
+                                <h3 className="text-2xl font-bold mb-4 text-white">Integração Nativa n8n</h3>
+                                <p className="text-muted-foreground leading-relaxed">
+                                    Conecte os modelos de IA aos seus fluxos de trabalho instantaneamente com nossos nodes oficiais publicados para o n8n.
+                                </p>
+                            </div>
+                        </BentoCard>
+                    </div>
+                </div>
+            </section>
+
+            {/* N8N Integration Section */}
+            <section className="py-24 relative overflow-hidden bg-black/20 border-t border-white/5">
+                <div className="absolute inset-0 bg-gradient-to-b from-pink-500/5 to-transparent pointer-events-none" />
+                <div className="container mx-auto px-6 relative z-10">
+                    <div className="flex flex-col lg:flex-row items-center gap-16">
+                        <div className="w-full lg:w-1/2 space-y-8">
+                            <Badge variant="outline" className="border-pink-500/30 text-pink-400 bg-pink-500/10">Ecossistema Conectado</Badge>
+                            <h2 className="text-3xl md:text-5xl font-bold text-white leading-tight">
+                                Automatize com os Nodes <span className="text-pink-500">n8n</span>
+                            </h2>
+                            <p className="text-lg text-muted-foreground leading-relaxed">
+                                Leve o poder dos nossos modelos especializados diretamente para os seus fluxos de automação. Com os nossos <strong>nodes nativos</strong> para n8n, você orquestra processos complexos sem escrever uma única linha de código.
+                            </p>
+
+                            <ul className="space-y-4">
+                                <li className="flex items-center text-muted-foreground">
+                                    <div className="h-8 w-8 rounded-full bg-pink-500/20 flex items-center justify-center mr-4 shrink-0">
+                                        <Sparkles className="h-4 w-4 text-pink-400" />
+                                    </div>
+                                    <span>Integração visual e intuitiva <em>drag-and-drop</em></span>
+                                </li>
+                                <li className="flex items-center text-muted-foreground">
+                                    <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center mr-4 shrink-0">
+                                        <Bot className="h-4 w-4 text-blue-400" />
+                                    </div>
+                                    <span>Acesso imediato a todos os modelos da plataforma</span>
+                                </li>
+                                <li className="flex items-center text-muted-foreground">
+                                    <div className="h-8 w-8 rounded-full bg-green-500/20 flex items-center justify-center mr-4 shrink-0">
+                                        <Zap className="h-4 w-4 text-green-400" />
+                                    </div>
+                                    <span>Extração de dados e roteamento sem latência</span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div className="w-full lg:w-1/2 relative group">
+                            <div className="absolute -inset-1 bg-gradient-to-r from-pink-500 to-purple-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
+                            <div className="relative rounded-2xl bg-black/40 border border-white/10 p-2 glass-ultra shadow-2xl overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-8 bg-white/5 flex items-center px-4 space-x-2">
+                                    <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
+                                    <div className="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                                    <div className="w-3 h-3 rounded-full bg-green-500/80"></div>
+                                </div>
+                                <img
+                                    src={ExemploN8n}
+                                    alt="Exemplo de uso dos nodes n8n nativos"
+                                    className="w-full h-auto rounded-xl object-cover mt-8 border border-white/5"
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

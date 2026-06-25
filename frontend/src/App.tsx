@@ -16,6 +16,7 @@ const RegisterPage = lazy(() => import("@/pages/RegisterPage"))
 const ForgotPasswordPage = lazy(() => import("@/pages/ForgotPasswordPage"))
 const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"))
 const VerifyEmailPage = lazy(() => import("@/pages/VerifyEmailPage"))
+const DocsPage = lazy(() => import("@/pages/DocsPage"))
 
 // Dashboard pages
 const DashboardOverview = lazy(() => import("@/pages/dashboard/Overview"))
@@ -79,6 +80,7 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
+              <Route path="/docs" element={<DocsPage />} />
 
               <Route path="/dashboard" element={
                 <ProtectedRoute>
