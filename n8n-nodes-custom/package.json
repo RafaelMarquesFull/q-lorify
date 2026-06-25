@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-qlorify",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Custom n8n nodes for Qlorify AI Agents",
   "keywords": [
     "n8n-community-node-package"
