@@ -37,7 +37,7 @@ export class QlorifyCredentials implements INodeType {
         },
         // Sub-node: no main input
         inputs: [],
-        // Output as ai_tool type (rendered as rounded sub-node)
+        // Output as ai_tool type to render as rounded sub-node on bottom ports
         outputs: ['ai_tool' as any],
         outputNames: ['Credentials'],
         credentials: [
@@ -47,17 +47,6 @@ export class QlorifyCredentials implements INodeType {
             },
         ],
         properties: [
-            {
-                displayName: 'Model ID',
-                name: 'modelId',
-                type: 'options',
-                typeOptions: {
-                    loadOptionsMethod: 'getModels',
-                },
-                default: '',
-                description: 'Select the AI model to use (only orchestrator-compatible models are shown)',
-                required: true,
-            },
             {
                 displayName: 'Label',
                 name: 'label',
@@ -76,44 +65,7 @@ export class QlorifyCredentials implements INodeType {
         ],
     };
 
-    methods = {
-        loadOptions: {
-            async getModels(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-                const returnData: INodePropertyOptions[] = [];
-
-                try {
-                    const credentials = await this.getCredentials('orchestratorApi');
-                    if (credentials) {
-                        const baseUrl = (credentials.baseUrl as string).replace(/\/$/, '');
-
-                        const options: OptionsWithUri = {
-                            method: 'GET',
-                            uri: `${baseUrl}/api/public/models`,
-                            json: true,
-                        };
-
-                        const response = await this.helpers.request(options);
-
-                        if (Array.isArray(response)) {
-                            for (const model of response) {
-                                // Only show isOrchestrator-compatible models
-                                if (model.isOrchestrator) {
-                                    returnData.push({
-                                        name: `${model.name} (${model.provider || 'Agent'})`,
-                                        value: model.id,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                } catch (error: any) {
-                    throw new Error(`Failed to load models: ${error.message}`);
-                }
-
-                return returnData;
-            },
-        },
-    } as any;
+    methods = {} as any;
 
     /**
      * supplyData - Called by the parent node (Agent Formatter) to get
@@ -128,7 +80,6 @@ export class QlorifyCredentials implements INodeType {
 
         const baseUrl = (credentials.baseUrl as string).replace(/\/$/, '');
         const accessToken = credentials.accessToken as string;
-        const modelId = this.getNodeParameter('modelId', 0, '') as string;
         const label = this.getNodeParameter('label', 0, 'Primary') as string;
         const validateOnConnect = this.getNodeParameter('validateOnConnect', 0, false) as boolean;
 
@@ -155,7 +106,6 @@ export class QlorifyCredentials implements INodeType {
             response: {
                 baseUrl,
                 accessToken,
-                modelId,
                 label,
             },
         };

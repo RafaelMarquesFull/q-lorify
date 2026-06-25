@@ -314,6 +314,7 @@ def execute_orchestrator_request(request, db, messages, model_data, selected_fun
     
     # Step 2: Execute functions with classified data
     results = {}
+    print(f'[Orchestrator] Starting with selected_functions={selected_functions}, output_schema={output_schema}')
     
     for uf in user_functions:
         if not isinstance(uf, dict):
@@ -396,6 +397,11 @@ def execute_orchestrator_request(request, db, messages, model_data, selected_fun
         # GENERAL PATH: Execute function with classified values per key
         # ══════════════════════════════════════════════════════════════
         func_result = {}
+        
+        # Se nenhuma chave foi classificada (ex: output_schema vazio), executa no texto completo
+        if not classified_values:
+            classified_values = {"content": user_content}
+            
         for key_name, value in classified_values.items():
             str_value = str(value).strip() if value else ""
             
@@ -509,8 +515,8 @@ def execute_orchestrator_request(request, db, messages, model_data, selected_fun
     db.orchexecution.create(
         data={
             "id": str(uuid.uuid4()),
-            "userId": exec_user_id if exec_user_id != 'orch_client' else None,
-            "clientId": exec_user_id if exec_user_id == 'orch_client' else None,
+            "userId": user_id if not is_orch_client else None,
+            "clientId": user_id if is_orch_client else None,
             "functionName": ','.join(results.keys()),
             "input": user_content[:500],
             "output": json.dumps(results, ensure_ascii=False),
@@ -543,7 +549,11 @@ def execute_orchestrator_request(request, db, messages, model_data, selected_fun
     # Format response
     raw_extractions = results
     
-    # If output_schema is provided, use AI to restructure the output
+    # If output_schema is provided and NOT empty, use AI to restructure the output
+    if output_schema and isinstance(output_schema, dict) and len(output_schema) == 0:
+        # Ignore completely empty dicts {}
+        output_schema = None
+        
     if output_schema and results:
         structured = format_output_with_schema(
             db, model_data, results, output_schema, user_content, system_prompt=system_prompt, compiled_rules=compiled_rules
@@ -603,25 +613,30 @@ def run_ai_classifier(db, model_data, user_content, func_keys, system_prompt="",
     
     prompt = f"""{context_intro}
 
-TAREFA: Analise o template/texto abaixo e extraia os valores para cada chave especificada.
+TAREFA: Analise o texto abaixo (que pode ser formal, informal, ou transcrição de áudio) e extraia os valores para cada chave especificada.
 
 ## REGRAS DE INFERÊNCIA CONTEXTUAL (MUITO IMPORTANTE):
 1. **Contexto de Remetente/Origem**: 
-   - CEP, CNPJ, CPF ou endereço que aparecem PRÓXIMOS a palavras como "Remetente", "Emitente", "Origem", "Pagador", "Coleta" → são dados de ORIGEM
-   - Exemplo: Se "Remetente: EMPRESA X, CNPJ: 12.345.678/0001-90, CEP: 01310-100" → CEP é de origem, CNPJ é do remetente
+   - CEP, CNPJ, CPF ou endereço que aparecem PRÓXIMOS a palavras como "Remetente", "Emitente", "Origem", "Pagador", "Coleta", "sai de", "pegar em" → são dados de ORIGEM.
+   - Exemplo: "sai de SP capital 01310-100" → 01310-100 é CEP de origem.
 
 2. **Contexto de Destinatário/Destino**:
-   - CEP, CNPJ, CPF ou endereço que aparecem PRÓXIMOS a palavras como "Destinatário", "Destino", "Entrega" → são dados de DESTINO
-   - Exemplo: Se "Destinatário: EMPRESA Y, CEP: 88100-001" → CEP é de destino
+   - CEP, CNPJ, CPF ou endereço que aparecem PRÓXIMOS a palavras como "Destinatário", "Destino", "Entrega", "vai pra", "entregar em" → são dados de DESTINO.
+   - Exemplo: "vai entregar lá em 88100-001" → 88100-001 é CEP de destino.
 
-3. **Múltiplos CEPs/CNPJs**: Se houver dois CEPs ou dois CNPJs, o PRIMEIRO geralmente é origem e o SEGUNDO é destino.
+3. **Múltiplos CEPs/CNPJs**: 
+   - Se houver dois CEPs e nenhum contexto verbal claro, o PRIMEIRO geralmente é origem e o SEGUNDO é destino.
 
-4. **Normalização obrigatória**:
+4. **Variabilidade Linguística**:
+   - Considere jargões logísticos e erros de digitação comuns em WhatsApp (ex: "vols", "cx", "kilos", "kg").
+   - Se um valor for mencionado por extenso (ex: "vinte quilos", "duas caixas"), extraia o valor numérico.
+
+5. **Normalização obrigatória**:
    - CEP: retornar APENAS 8 dígitos numéricos (ex: "01310-100" → "01310100")
    - CNPJ: retornar APENAS 14 dígitos numéricos (ex: "12.345.678/0001-90" → "12345678000190")
    - CPF: retornar APENAS 11 dígitos numéricos (ex: "123.456.789-00" → "12345678900")
    - Valores monetários: retornar apenas números com ponto decimal (ex: "R$ 5.908,96" → "5908.96")
-   - Peso: retornar apenas número (ex: "165 Kg" → "165")
+   - Peso/Volume: retornar apenas número (ex: "165 Kg" → "165")
 
 5. **FORMATO ESTRUTURADO PARA ENDEREÇOS**:
    Quando a chave for de endereço, retorne um OBJETO com:

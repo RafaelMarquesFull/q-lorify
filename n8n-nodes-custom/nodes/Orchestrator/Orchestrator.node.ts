@@ -26,28 +26,23 @@ export class Orchestrator implements INodeType {
                 AI: ['Root Nodes'],
             },
         },
-        // Main data input (top) + two bottom ports for credentials sub-nodes
-        inputs: [
-            'main' as any,
-            {
-                type: 'ai_tool',
-                displayName: 'Credentials',
-                required: true,
-                maxConnections: 1,
-                description: 'Connect an Agent Credentials node with primary API credentials',
-            },
-            {
-                type: 'ai_languageModel',
-                displayName: 'Fallback',
-                required: false,
-                maxConnections: 1,
-                description: 'Connect an Agent Fallback node with backup API credentials (used when primary fails)',
-            },
-        ] as any,
+        // Main data input (left) + two bottom ports for credentials sub-nodes
+        inputs: ['main', 'ai_tool', 'ai_tool'] as any,
         outputs: ['main'],
         // No built-in credential — credentials come from sub-nodes
         credentials: [],
         properties: [
+            {
+                displayName: 'Model ID',
+                name: 'modelId',
+                type: 'options',
+                typeOptions: {
+                    loadOptionsMethod: 'getModels',
+                },
+                default: '',
+                description: 'Select the AI model to use',
+                required: true,
+            },
             {
                 displayName: 'Message',
                 name: 'message',
@@ -94,12 +89,10 @@ export class Orchestrator implements INodeType {
 
     methods = {
         loadOptions: {
-            async getFunctions(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+            async getModels(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
                 const returnData: INodePropertyOptions[] = [];
-
-                // Public endpoint — no auth needed.
                 const baseUrls = [
-                    process.env.BACKEND_API_URL || '',
+                    process.env.QLORIFY_BASE_URL || process.env.BACKEND_API_URL || '',
                     'http://host.docker.internal:8000',
                     'http://localhost:8000',
                 ].filter(Boolean);
@@ -108,7 +101,47 @@ export class Orchestrator implements INodeType {
                     try {
                         const options: IHttpRequestOptions = {
                             method: 'GET',
-                            url: `${baseUrl}/api/public/functions`,
+                            url: `${baseUrl}/api/public/models`,
+                            json: true,
+                            timeout: 5000,
+                        };
+                        const response = await this.helpers.httpRequest(options);
+                        if (Array.isArray(response)) {
+                            for (const model of response) {
+                                if (model.isOrchestrator) {
+                                    returnData.push({
+                                        name: `${model.name} (${model.provider || 'Agent'})`,
+                                        value: model.id,
+                                    });
+                                }
+                            }
+                        }
+                        break;
+                    } catch (error) {
+                        continue;
+                    }
+                }
+                return returnData;
+            },
+            async getFunctions(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+                const returnData: INodePropertyOptions[] = [];
+                const modelId = this.getCurrentNodeParameter('modelId') as string;
+                
+                if (!modelId) {
+                    return [{ name: 'Please select a Model first', value: '' }];
+                }
+
+                const baseUrls = [
+                    process.env.QLORIFY_BASE_URL || process.env.BACKEND_API_URL || '',
+                    'http://host.docker.internal:8000',
+                    'http://localhost:8000',
+                ].filter(Boolean);
+
+                for (const baseUrl of baseUrls) {
+                    try {
+                        const options: IHttpRequestOptions = {
+                            method: 'GET',
+                            url: `${baseUrl}/api/public/functions?model_id=${modelId}`,
                             json: true,
                             timeout: 5000,
                         };
@@ -123,9 +156,9 @@ export class Orchestrator implements INodeType {
                                 });
                             }
                         }
-                        break; // Success — stop trying other URLs
+                        break;
                     } catch (error) {
-                        continue; // Try next URL
+                        continue;
                     }
                 }
 
@@ -138,7 +171,7 @@ export class Orchestrator implements INodeType {
         const items = this.getInputData();
         const returnData: INodeExecutionData[] = [];
 
-        // ── Get PRIMARY credentials from Credentials port (ai_tool) ──
+        // ── Get PRIMARY credentials from Credentials port (ai_tool index 0) ──
         let primaryCreds: any = null;
         try {
             const connectedData = await this.getInputConnectionData('ai_tool', 0);
@@ -153,20 +186,20 @@ export class Orchestrator implements INodeType {
 
         if (!primaryCreds || !primaryCreds.baseUrl || !primaryCreds.accessToken) {
             throw new Error(
-                'No credentials connected. Connect an "Agent Credentials" node to the Credentials port at the bottom of this node.'
+                'No credentials connected. Connect a "Qlorify Credentials" node to the Credentials port.'
             );
         }
 
         const primaryBaseUrl = (primaryCreds.baseUrl as string).replace(/\/$/, '');
         const primaryToken = primaryCreds.accessToken as string;
 
-        // ── Get FALLBACK credentials from Fallback port (ai_languageModel) ──
+        // ── Get FALLBACK credentials from Fallback port (ai_tool index 1) ──
         let fallbackCreds: any = null;
         let fallbackBaseUrl: string | null = null;
         let fallbackToken: string | null = null;
 
         try {
-            const fbData = await this.getInputConnectionData('ai_languageModel', 0);
+            const fbData = await this.getInputConnectionData('ai_tool', 1);
             if (Array.isArray(fbData)) {
                 fallbackCreds = fbData[0];
             } else if (fbData) {
@@ -181,20 +214,13 @@ export class Orchestrator implements INodeType {
             // No fallback connected — that's OK
         }
 
-        // ── Model ID comes from the credentials sub-node ──
-        const primaryModelId = primaryCreds.modelId as string;
-        if (!primaryModelId) {
-            throw new Error(
-                'No Model ID configured. Open the "Agent Credentials" sub-node and select a model.'
-            );
-        }
-
-        // Fallback model ID (optional — uses fallback's own model or falls back to primary's model)
-        const fallbackModelId = (fallbackCreds && fallbackCreds.modelId) ? fallbackCreds.modelId as string : primaryModelId;
+        // Fallback info exists only if fallback is connected
 
         // ── Process Each Item ──
         for (let i = 0; i < items.length; i++) {
             try {
+                const primaryModelId = this.getNodeParameter('modelId', i) as string;
+                const fallbackModelId = primaryModelId;
                 const message = this.getNodeParameter('message', i) as string;
                 const systemPrompt = this.getNodeParameter('systemPrompt', i, '') as string;
                 const outputSchemaRaw = this.getNodeParameter('outputSchema', i, '') as string;
@@ -222,10 +248,13 @@ export class Orchestrator implements INodeType {
                     stream: false,
                 };
 
-                // Add output_schema if provided
-                if (outputSchemaRaw) {
+                // Add output_schema if provided and not completely empty
+                if (outputSchemaRaw && outputSchemaRaw.trim() !== '' && outputSchemaRaw.trim() !== '{}') {
                     try {
-                        body.output_schema = JSON.parse(outputSchemaRaw);
+                        const parsed = JSON.parse(outputSchemaRaw);
+                        if (typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length > 0) {
+                            body.output_schema = parsed;
+                        }
                     } catch (e) {
                         body.output_schema = outputSchemaRaw;
                     }

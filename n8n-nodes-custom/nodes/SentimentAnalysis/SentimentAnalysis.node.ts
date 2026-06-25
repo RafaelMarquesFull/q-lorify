@@ -31,19 +31,30 @@ export class SentimentAnalysis implements INodeType {
                 displayName: 'Credentials',
                 required: true,
                 maxConnections: 1,
-                description: 'Connect an Agent Credentials node with primary API credentials',
+                description: 'Connect a Qlorify Credentials node for primary API access',
             },
             {
-                type: 'ai_languageModel',
+                type: 'ai_tool',
                 displayName: 'Fallback',
                 required: false,
                 maxConnections: 1,
-                description: 'Connect an Agent Fallback node with backup API credentials (used when primary fails)',
+                description: 'Connect a Qlorify Credentials node for backup API access',
             },
         ] as any,
         outputs: ['main'],
         credentials: [],
         properties: [
+            {
+                displayName: 'Model ID',
+                name: 'modelId',
+                type: 'options',
+                typeOptions: {
+                    loadOptionsMethod: 'getModels',
+                },
+                default: '',
+                description: 'Select the AI model to use',
+                required: true,
+            },
             {
                 displayName: 'Domain',
                 name: 'domain',
@@ -218,13 +229,51 @@ export class SentimentAnalysis implements INodeType {
             },
         ],
     };
-    methods = {} as any;
+    methods = {
+        loadOptions: {
+            async getModels(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+                const returnData: INodePropertyOptions[] = [];
+                const baseUrls = [
+                    process.env.QLORIFY_BASE_URL || process.env.BACKEND_API_URL || '',
+                    'http://host.docker.internal:8000',
+                    'http://localhost:8000',
+                ].filter(Boolean);
+
+                for (const baseUrl of baseUrls) {
+                    try {
+                        const options: IHttpRequestOptions = {
+                            method: 'GET',
+                            url: `${baseUrl}/api/public/models`,
+                            json: true,
+                            timeout: 5000,
+                        };
+                        const response = await this.helpers.httpRequest(options);
+                        if (Array.isArray(response)) {
+                            for (const model of response) {
+                                const orqTag = model.isOrchestrator ? 'Orq' : '';
+                                const sentTag = model.isSentiment ? 'Sent' : '';
+                                const tags = [orqTag, sentTag].filter(Boolean).join(' | ');
+                                returnData.push({
+                                    name: `${model.name} (${model.provider || 'Agent'}) [${tags}]`,
+                                    value: model.id,
+                                });
+                            }
+                        }
+                        break;
+                    } catch (error) {
+                        continue;
+                    }
+                }
+                return returnData;
+            },
+        },
+    } as any;
 
     async execute(this: any): Promise<INodeExecutionData[][]> {
         const items = this.getInputData();
         const returnData: INodeExecutionData[] = [];
 
-        // ── Get PRIMARY credentials from Credentials port (ai_tool) ──
+        // ── Get PRIMARY credentials from Credentials port (ai_tool index 0) ──
         let primaryCreds: any = null;
         try {
             const connectedData = await this.getInputConnectionData('ai_tool', 0);
@@ -239,28 +288,22 @@ export class SentimentAnalysis implements INodeType {
 
         if (!primaryCreds || !primaryCreds.baseUrl || !primaryCreds.accessToken) {
             throw new Error(
-                'No credentials connected. Connect an "Agent Credentials" node to the Credentials port at the bottom of this node.'
+                'No credentials connected. Connect a "Qlorify Credentials" node to the Credentials port.'
             );
         }
 
         const baseUrl = (primaryCreds.baseUrl as string).replace(/\/$/, '');
         const token = primaryCreds.accessToken as string;
 
-        // Model ID comes from the credentials sub-node
-        const primaryModelId = primaryCreds.modelId as string;
-        if (!primaryModelId) {
-            throw new Error(
-                'No Model ID configured. Open the "Agent Credentials" sub-node and select a model.'
-            );
-        }
+        // Fallback info exists only if fallback is connected
 
-        // ── Get FALLBACK credentials from Fallback port (ai_languageModel) ──
+        // ── Get FALLBACK credentials from Fallback port (ai_tool index 1) ──
         let fallbackCreds: any = null;
         let fallbackBaseUrl: string | null = null;
         let fallbackToken: string | null = null;
 
         try {
-            const fbData = await this.getInputConnectionData('ai_languageModel', 0);
+            const fbData = await this.getInputConnectionData('ai_tool', 1);
             if (Array.isArray(fbData)) {
                 fallbackCreds = fbData[0];
             } else if (fbData) {
@@ -274,11 +317,10 @@ export class SentimentAnalysis implements INodeType {
         } catch (e) {
             // No fallback connected — that's OK
         }
-
-        const fallbackModelId = (fallbackCreds && fallbackCreds.modelId) ? fallbackCreds.modelId as string : primaryModelId;
-
         for (let i = 0; i < items.length; i++) {
             try {
+                const primaryModelId = this.getNodeParameter('modelId', i) as string;
+                const fallbackModelId = primaryModelId;
                 // Get domain
                 const domain = this.getNodeParameter('domain', i) as string;
 
@@ -383,10 +425,12 @@ export class SentimentAnalysis implements INodeType {
                             const fallbackBody = { ...body, model_id: fallbackModelId };
                             response = await makeRequest(`${fallbackBaseUrl}/api/ai/sentiment/analyze`, fallbackToken, fallbackBody);
                         } catch (fallbackError: any) {
-                            throw new Error(`Both primary and fallback credentials failed.`);
+                            const errorDetails = fallbackError.response?.data || fallbackError.response?.body || fallbackError.message;
+                            throw new Error(`Both primary and fallback credentials failed. Fallback error: ${JSON.stringify(errorDetails)}`);
                         }
                     } else {
-                        throw primaryError;
+                        const errorDetails = primaryError.response?.data || primaryError.response?.body || primaryError.message;
+                        throw new Error(`Primary request failed: ${JSON.stringify(errorDetails)}`);
                     }
                 }
 

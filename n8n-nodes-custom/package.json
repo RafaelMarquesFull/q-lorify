@@ -30,8 +30,7 @@
     "nodes": [
       "dist/nodes/Orchestrator/Orchestrator.node.js",
       "dist/nodes/SentimentAnalysis/SentimentAnalysis.node.js",
-      "dist/nodes/QlorifyCredentials/QlorifyCredentials.node.js",
-      "dist/nodes/QlorifyFallback/QlorifyFallback.node.js"
+      "dist/nodes/QlorifyCredentials/QlorifyCredentials.node.js"
     ],
     "credentials": [
       "dist/credentials/OrchestratorApi.credentials.js"
